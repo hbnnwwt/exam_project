@@ -52,6 +52,14 @@ def test_manifest_round_trip_json():
         "/absolute/path.txt",
         "C:/absolute/path.txt",
         "config/../evil.txt",
+        ".",
+        "./x.txt",
+        "config/./x.json",
+        "config//x.json",
+        "config/",
+        " config/x.json",
+        "config/x.json ",
+        r"config\x.json",
         "",
     ],
 )
@@ -80,18 +88,45 @@ def test_from_dict_rejects_invalid_asset_values(asset_key, value):
         ProjectManifest.from_dict(data)
 
 
-def test_from_dict_stores_validated_asset_paths(monkeypatch):
-    import exam_project.core.manifest as manifest_module
-
+@pytest.mark.parametrize("field", ["assets", "exam", "checksums"])
+def test_from_dict_rejects_non_mapping_sections(field):
     data = _manifest_dict()
+    data[field] = []
 
-    def fake_validate_asset_path(path):
-        return f"validated/{path}"
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
 
-    monkeypatch.setattr(manifest_module, "validate_asset_path", fake_validate_asset_path)
+    assert exc_info.value.code == "manifest_invalid_type"
 
+
+@pytest.mark.parametrize("data", [None, [], "not-a-dict"])
+def test_from_dict_rejects_non_mapping_manifest(data):
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_from_dict_rejects_bad_schema_version():
+    data = _manifest_dict()
+    data["schema_version"] = "not-int"
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_field"
+
+
+def test_manifest_mappings_are_immutable():
+    manifest = ProjectManifest.from_dict(_manifest_dict())
+
+    with pytest.raises(TypeError):
+        manifest.assets["layout"] = "config/other.json"
+
+
+def test_from_dict_copies_manifest_mappings():
+    data = _manifest_dict()
     manifest = ProjectManifest.from_dict(data)
+    data["assets"]["layout"] = "config/other.json"
 
-    assert manifest.assets == {
-        key: f"validated/{path}" for key, path in data["assets"].items()
-    }
+    assert manifest.assets["layout"] == "config/sheet_layout.json"
