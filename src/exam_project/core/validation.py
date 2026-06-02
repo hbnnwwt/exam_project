@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile
@@ -21,7 +21,14 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
-def classify_question(q_num: int, layout: dict) -> str:
+TYPE_LABELS = {
+    "choice": "选择题",
+    "judge": "判断题",
+    "essay": "主观题",
+}
+
+
+def classify_question(q_num: int, layout: dict) -> str | None:
     for q_type in QUESTION_TYPES:
         cfg = layout.get(q_type)
         if not isinstance(cfg, dict):
@@ -32,7 +39,7 @@ def classify_question(q_num: int, layout: dict) -> str:
             continue
         if start <= q_num < start + count:
             return q_type
-    return "essay"
+    return None
 
 
 def _options_for(q_type: str, layout: dict) -> list[str] | None:
@@ -43,10 +50,13 @@ def _options_for(q_type: str, layout: dict) -> list[str] | None:
     if options is None:
         return None
     if isinstance(options, str):
-        return [options]
-    if isinstance(options, Iterable):
-        return [str(option) for option in options]
-    return [str(options)]
+        return [options.strip()]
+    if isinstance(options, Mapping) or not isinstance(options, Sequence):
+        raise ProjectValidationError(
+            f"答题卡布局的 {TYPE_LABELS.get(q_type, q_type)} 选项无效",
+            code="invalid_layout_options",
+        )
+    return [str(option).strip() for option in options]
 
 
 def _is_blank(value: Any) -> bool:
@@ -72,9 +82,11 @@ def _question_number(value: Any) -> int:
 def validate_answer_workbook(path: Path, layout: dict) -> None:
     try:
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    except (OSError, BadZipFile, InvalidFileException) as exc:
+    except Exception as exc:
+        if isinstance(exc, ProjectValidationError):
+            raise
         raise ProjectValidationError(
-            f"Could not open answer workbook: {path}",
+            f"无法打开参考答案工作簿: {path}",
             code="invalid_answer_workbook",
         ) from exc
 
@@ -83,25 +95,40 @@ def validate_answer_workbook(path: Path, layout: dict) -> None:
         for col in range(2, ws.max_column + 1):
             q_raw = ws.cell(row=1, column=col).value
             answer_raw = ws.cell(row=2, column=col).value
-            if _is_blank(q_raw) or _is_blank(answer_raw):
+            if _is_blank(q_raw) and _is_blank(answer_raw):
                 continue
+            if _is_blank(q_raw):
+                raise ProjectValidationError(
+                    f"参考答案第 {col} 列缺少题号",
+                    code="missing_question_number",
+                )
+            if _is_blank(answer_raw):
+                raise ProjectValidationError(
+                    f"第 {q_raw} 题缺少参考答案",
+                    code="missing_answer",
+                )
 
             try:
                 q_num = _question_number(q_raw)
             except ValueError as exc:
                 raise ProjectValidationError(
-                    f"Answer workbook header contains invalid question number: {q_raw}",
+                    f"参考答案表头包含非法题号: {q_raw}",
                     code="invalid_question_number",
                 ) from exc
 
             answer = str(answer_raw).strip()
             q_type = classify_question(q_num, layout)
+            if q_type is None:
+                raise ProjectValidationError(
+                    f"参考答案包含布局未声明的题号: 第 {q_num} 题",
+                    code="unknown_question_number",
+                )
             options = _options_for(q_type, layout)
             if options is not None and answer not in options:
-                allowed = ", ".join(options)
+                allowed = "/".join(options)
                 raise ProjectValidationError(
-                    f"question {q_num} answer {answer} does not match "
-                    f"{q_type} layout; allowed answers: {allowed}",
+                    f"参考答案与答题卡布局不一致。第 {q_num} 题答案为 {answer}，"
+                    f"但布局声明为 {TYPE_LABELS.get(q_type, q_type)}，允许答案为 {allowed}。",
                     code="answer_layout_mismatch",
                 )
     finally:
