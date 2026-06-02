@@ -52,30 +52,32 @@ def _require_mapping(value: Any, field: str) -> Mapping[Any, Any]:
     return value
 
 
-def _coerce_int_value(value: Any, field: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
+def _validate_schema_version(value: Any) -> int:
+    if type(value) is not int or value != 1:
+        raise ProjectValidationError(
+            "project.json schema_version 无效", code="manifest_invalid_field"
+        )
+    return value
+
+
+def _validate_text_field(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
         raise ProjectValidationError(
             f"project.json 字段无效: {field}", code="manifest_invalid_field"
-        ) from exc
+        )
+    return value
 
 
-def _coerce_int_field(data: Mapping[str, Any], field: str) -> int:
-    return _coerce_int_value(data[field], field)
-
-
-def _coerce_str_value(value: Any, field: str) -> str:
-    try:
-        return str(value)
-    except Exception as exc:
+def _validate_asset_key(value: Any) -> str:
+    if not isinstance(value, str):
         raise ProjectValidationError(
-            f"project.json 字段无效: {field}", code="manifest_invalid_field"
-        ) from exc
-
-
-def _coerce_str_field(data: Mapping[str, Any], field: str) -> str:
-    return _coerce_str_value(data[field], field)
+            "project.json 资产键类型错误", code="manifest_invalid_type"
+        )
+    if not value.strip():
+        raise ProjectValidationError(
+            "project.json 资产键无效", code="manifest_invalid_field"
+        )
+    return value
 
 
 def _validate_json_value(value: Any, field: str) -> Any:
@@ -137,7 +139,7 @@ class ProjectManifest:
                     code="manifest_missing_asset",
                 )
         assets = {
-            asset_key: validate_asset_path(path)
+            _validate_asset_key(asset_key): validate_asset_path(path)
             for asset_key, path in raw_assets.items()
         }
         checksums = {}
@@ -146,17 +148,17 @@ class ProjectManifest:
                 checksum, f"checksums.{path}"
             )
         object.__setattr__(
-            self, "schema_version", _coerce_int_value(self.schema_version, "schema_version")
+            self, "schema_version", _validate_schema_version(self.schema_version)
         )
         object.__setattr__(
-            self, "project_id", _coerce_str_value(self.project_id, "project_id")
+            self, "project_id", _validate_text_field(self.project_id, "project_id")
         )
-        object.__setattr__(self, "name", _coerce_str_value(self.name, "name"))
+        object.__setattr__(self, "name", _validate_text_field(self.name, "name"))
         object.__setattr__(
-            self, "created_at", _coerce_str_value(self.created_at, "created_at")
+            self, "created_at", _validate_text_field(self.created_at, "created_at")
         )
         object.__setattr__(
-            self, "updated_at", _coerce_str_value(self.updated_at, "updated_at")
+            self, "updated_at", _validate_text_field(self.updated_at, "updated_at")
         )
         object.__setattr__(self, "assets", _freeze(assets))
         object.__setattr__(self, "exam", _freeze(_validate_json_value(raw_exam, "exam")))
@@ -174,11 +176,11 @@ class ProjectManifest:
         raw_exam = _require_mapping(data["exam"], "exam")
         raw_checksums = _require_mapping(data["checksums"], "checksums")
         return cls(
-            schema_version=_coerce_int_field(data, "schema_version"),
-            project_id=_coerce_str_field(data, "project_id"),
-            name=_coerce_str_field(data, "name"),
-            created_at=_coerce_str_field(data, "created_at"),
-            updated_at=_coerce_str_field(data, "updated_at"),
+            schema_version=data["schema_version"],
+            project_id=data["project_id"],
+            name=data["name"],
+            created_at=data["created_at"],
+            updated_at=data["updated_at"],
             assets=dict(raw_assets),
             exam=dict(raw_exam),
             checksums=dict(raw_checksums),

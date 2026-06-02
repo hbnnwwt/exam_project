@@ -124,6 +124,98 @@ def test_from_dict_rejects_bad_schema_version():
     assert exc_info.value.code == "manifest_invalid_field"
 
 
+@pytest.mark.parametrize("schema_version", [0, 2, 1.9, True])
+def test_from_dict_rejects_unsupported_schema_version(schema_version):
+    data = _manifest_dict()
+    data["schema_version"] = schema_version
+
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest.from_dict(data)
+
+
+@pytest.mark.parametrize("schema_version", [0, 2, 1.9, True])
+def test_constructor_rejects_unsupported_schema_version(schema_version):
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest(
+            schema_version=schema_version,
+            project_id="project-1",
+            name="期末考试",
+            created_at="2026-06-02T20:00:00+08:00",
+            updated_at="2026-06-02T20:30:00+08:00",
+            assets={
+                "design": "design/answer_sheet.json",
+                "layout": "config/sheet_layout.json",
+                "answers": "answers/reference_answers.xlsx",
+            },
+            exam={"student_id_digits": 10, "question_types": ["choice", "judge"]},
+            checksums={},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("project_id", object()),
+        ("name", {"x"}),
+        ("created_at", 1),
+        ("updated_at", ""),
+    ],
+)
+def test_from_dict_rejects_invalid_scalar_identity_fields(field, value):
+    data = _manifest_dict()
+    data[field] = value
+
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("project_id", object()),
+        ("name", {"x"}),
+        ("created_at", 1),
+        ("updated_at", ""),
+    ],
+)
+def test_constructor_rejects_invalid_scalar_identity_fields(field, value):
+    kwargs = _manifest_dict()
+    kwargs[field] = value
+
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest(**kwargs)
+
+
+def test_from_dict_rejects_non_string_asset_keys():
+    data = _manifest_dict()
+    data["assets"] = {
+        123: "x",
+        "design": "design/answer_sheet.json",
+        "layout": "config/sheet_layout.json",
+        "answers": "answers/reference_answers.xlsx",
+    }
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_constructor_rejects_non_string_asset_keys():
+    data = _manifest_dict()
+    data["assets"] = {
+        123: "x",
+        "design": "design/answer_sheet.json",
+        "layout": "config/sheet_layout.json",
+        "answers": "answers/reference_answers.xlsx",
+    }
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
 def test_constructor_rejects_invalid_asset_paths():
     with pytest.raises(ProjectValidationError):
         ProjectManifest(
