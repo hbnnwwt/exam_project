@@ -50,8 +50,8 @@ def validate_asset_path(path: str) -> str:
     return path
 
 
-def _require_mapping(value: Any, field: str) -> Mapping[Any, Any]:
-    if not isinstance(value, Mapping):
+def _require_mapping(value: Any, field: str) -> dict[str, Any]:
+    if type(value) is not dict:
         raise ProjectValidationError(
             f"project.json 字段类型错误: {field}", code="manifest_invalid_type"
         )
@@ -103,7 +103,7 @@ def _validate_json_value(value: Any, field: str) -> Any:
         return value
     if value is None or isinstance(value, str | int | bool):
         return value
-    if isinstance(value, Mapping):
+    if type(value) is dict:
         validated = {}
         for key, nested_value in value.items():
             if not isinstance(key, str):
@@ -183,8 +183,8 @@ class ProjectManifest:
         object.__setattr__(self, "checksums", _freeze(checksums))
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ProjectManifest":
-        data = _require_mapping(data, "project")
+    def from_dict(cls, data: Any) -> "ProjectManifest":
+        data = _require_mapping(_validate_json_value(data, "project"), "project")
         for key in REQUIRED_FIELDS:
             if key not in data:
                 raise ProjectValidationError(

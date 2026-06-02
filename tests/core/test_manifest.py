@@ -1,4 +1,5 @@
 import json
+from types import MappingProxyType
 
 import pytest
 
@@ -120,6 +121,41 @@ def test_from_dict_rejects_non_mapping_sections(field):
 
 @pytest.mark.parametrize("data", [None, [], "not-a-dict"])
 def test_from_dict_rejects_non_mapping_manifest(data):
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [object(), {1, 2}, b"x", ("choice",), float("nan")],
+)
+def test_from_dict_rejects_unknown_non_json_values(value):
+    data = _manifest_dict()
+    data["extra"] = value
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_from_dict_rejects_non_string_top_level_keys():
+    data = _manifest_dict()
+    data[1] = "bad"
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize("field", ["assets", "exam", "checksums"])
+def test_from_dict_rejects_mapping_subclasses(field):
+    data = _manifest_dict()
+    data[field] = MappingProxyType(data[field])
+
     with pytest.raises(ProjectValidationError) as exc_info:
         ProjectManifest.from_dict(data)
 
@@ -280,6 +316,16 @@ def test_constructor_rejects_non_json_exam_values():
             exam={"bad": {1, 2}},
             checksums={},
         )
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_constructor_rejects_mapping_subclass_exam_values():
+    data = _manifest_dict()
+    data["exam"] = MappingProxyType({"student_id_digits": 10})
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
 
     assert exc_info.value.code == "manifest_invalid_type"
 
