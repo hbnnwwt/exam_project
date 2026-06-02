@@ -146,9 +146,43 @@ def test_validate_answer_workbook_rejects_mapping_options(
     assert exc.value.code == "invalid_layout_options"
 
 
-def test_validate_answer_workbook_rejects_invalid_workbook(tmp_path: Path) -> None:
+def test_validate_answer_workbook_rejects_blank_options(tmp_path: Path) -> None:
+    layout = {
+        "choice": {"question_start": 1, "question_count": 1, "options": ["", " "]},
+    }
+    path = tmp_path / "answers.xlsx"
+    make_xlsx(path, {1: "A"})
+
+    with pytest.raises(ProjectValidationError) as exc:
+        validate_answer_workbook(path, layout)
+
+    assert exc.value.code == "invalid_layout_options"
+
+
+def test_validate_answer_workbook_rejects_invalid_workbook_bytes(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "answers.xlsx"
     path.write_bytes(b"not an xlsx")
+
+    with pytest.raises(ProjectValidationError) as exc:
+        validate_answer_workbook(path, {})
+
+    assert exc.value.code == "invalid_answer_workbook"
+
+
+def test_validate_answer_workbook_rejects_missing_workbook(tmp_path: Path) -> None:
+    path = tmp_path / "missing.xlsx"
+
+    with pytest.raises(ProjectValidationError) as exc:
+        validate_answer_workbook(path, {})
+
+    assert exc.value.code == "invalid_answer_workbook"
+
+
+def test_validate_answer_workbook_rejects_empty_zip(tmp_path: Path) -> None:
+    path = tmp_path / "empty.xlsx"
+    path.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
 
     with pytest.raises(ProjectValidationError) as exc:
         validate_answer_workbook(path, {})

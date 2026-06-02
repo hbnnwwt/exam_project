@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from zipfile import BadZipFile
+from zipfile import BadZipFile, LargeZipFile
 
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
@@ -56,7 +56,13 @@ def _options_for(q_type: str, layout: dict) -> list[str] | None:
             f"答题卡布局的 {TYPE_LABELS.get(q_type, q_type)} 选项无效",
             code="invalid_layout_options",
         )
-    return [str(option).strip() for option in options]
+    normalized = [str(option).strip() for option in options if not _is_blank(option)]
+    if not normalized:
+        raise ProjectValidationError(
+            f"答题卡布局的 {TYPE_LABELS.get(q_type, q_type)} 选项无效",
+            code="invalid_layout_options",
+        )
+    return normalized
 
 
 def _is_blank(value: Any) -> bool:
@@ -82,9 +88,15 @@ def _question_number(value: Any) -> int:
 def validate_answer_workbook(path: Path, layout: dict) -> None:
     try:
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    except Exception as exc:
-        if isinstance(exc, ProjectValidationError):
-            raise
+    except (
+        OSError,
+        BadZipFile,
+        LargeZipFile,
+        InvalidFileException,
+        KeyError,
+        ValueError,
+        TypeError,
+    ) as exc:
         raise ProjectValidationError(
             f"无法打开参考答案工作簿: {path}",
             code="invalid_answer_workbook",
