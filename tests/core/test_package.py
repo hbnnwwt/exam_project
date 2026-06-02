@@ -334,7 +334,6 @@ def test_open_restores_existing_target_when_replace_fails(
     target_dir.mkdir()
     (target_dir / "marker.txt").write_text("keep", encoding="utf-8")
     real_move = shutil.move
-    real_remove_existing_path = package_module._remove_existing_path
     moves = 0
 
     def fail_second_move(src: str, dst: str):
@@ -353,6 +352,42 @@ def test_open_restores_existing_target_when_replace_fails(
 
     assert (target_dir / "marker.txt").read_text(encoding="utf-8") == "keep"
     assert not (target_dir / "partial.txt").exists()
+
+
+def test_open_preserves_old_target_when_restore_move_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = tmp_path / "sample.examproj"
+    ExamProjectPackage.pack(workdir, package_path)
+    target_dir = tmp_path / "opened"
+    target_dir.mkdir()
+    (target_dir / "marker.txt").write_text("keep", encoding="utf-8")
+    real_move = shutil.move
+    moves = 0
+
+    def fail_restore_move(src: str, dst: str):
+        nonlocal moves
+        moves += 1
+        if moves == 2:
+            Path(dst).mkdir(parents=True, exist_ok=True)
+            (Path(dst) / "partial.txt").write_text("partial", encoding="utf-8")
+            raise OSError("simulated move failure")
+        if moves == 3:
+            raise OSError("simulated restore failure")
+        return real_move(src, dst)
+
+    monkeypatch.setattr(shutil, "move", fail_restore_move)
+
+    with pytest.raises(OSError):
+        ExamProjectPackage.open(package_path, target_dir)
+
+    old_dirs = list(tmp_path.glob(".opened.old-*"))
+    assert len(old_dirs) == 1
+    assert (old_dirs[0] / "opened" / "marker.txt").read_text(encoding="utf-8") == "keep"
+    assert not target_dir.exists()
 
 
 def test_open_preserves_old_target_when_partial_cleanup_fails(
