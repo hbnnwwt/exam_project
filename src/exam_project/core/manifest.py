@@ -52,16 +52,17 @@ class ProjectManifest:
                 raise ProjectValidationError(
                     f"project.json 缺少字段: {key}", code="manifest_missing_field"
                 )
-        assets = dict(data["assets"])
+        raw_assets = dict(data["assets"])
         for asset_key in REQUIRED_ASSETS:
-            if asset_key not in assets:
+            if asset_key not in raw_assets:
                 raise ProjectValidationError(
                     f"project.json 缺少资产声明: {asset_key}",
                     code="manifest_missing_asset",
                 )
-        for path in assets.values():
-            if path:
-                validate_asset_path(path)
+        assets = {
+            asset_key: validate_asset_path(path)
+            for asset_key, path in raw_assets.items()
+        }
         for path in data["checksums"]:
             validate_asset_path(path)
         return cls(
