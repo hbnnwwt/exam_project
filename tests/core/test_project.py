@@ -37,6 +37,17 @@ def make_project(tmp_path: Path) -> ExamProject:
     )
 
 
+def make_project_without_baseline(tmp_path: Path) -> ExamProject:
+    project = make_project(tmp_path)
+    data = project.manifest.to_dict()
+    data["assets"].pop("baseline")
+    return ExamProject(
+        package_path=project.package_path,
+        workdir=project.workdir,
+        manifest=ProjectManifest.from_dict(data),
+    )
+
+
 def test_asset_path_resolves_declared_asset_under_workdir(tmp_path: Path) -> None:
     project = make_project(tmp_path)
 
@@ -59,11 +70,34 @@ def test_load_layout_reads_layout_json_as_dict(tmp_path: Path) -> None:
     assert project.load_layout() == {"layout": {}, "scoring": {"choice_score": 1}}
 
 
+def test_load_layout_missing_file_uses_python_io_error(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    project.layout_path.unlink()
+
+    with pytest.raises(FileNotFoundError):
+        project.load_layout()
+
+
+def test_load_layout_invalid_json_uses_json_error(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+    project.layout_path.write_text("{", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
+        project.load_layout()
+
+
 def test_asset_path_rejects_undeclared_asset_key(tmp_path: Path) -> None:
     project = make_project(tmp_path)
 
     with pytest.raises(ProjectError, match="项目未声明资产: missing"):
         project.asset_path("missing")
+
+
+def test_baseline_path_rejects_missing_optional_asset(tmp_path: Path) -> None:
+    project = make_project_without_baseline(tmp_path)
+
+    with pytest.raises(ProjectError, match="项目未声明资产: baseline"):
+        _ = project.baseline_path
 
 
 def test_project_context_tracks_current_project(tmp_path: Path) -> None:
