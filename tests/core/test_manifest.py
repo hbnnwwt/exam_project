@@ -7,6 +7,10 @@ from exam_project.core.errors import ProjectValidationError
 from exam_project.core.manifest import ProjectManifest, validate_asset_path
 
 
+class JsonList(list):
+    pass
+
+
 def _manifest_dict():
     return {
         "schema_version": 1,
@@ -249,6 +253,17 @@ def test_from_dict_rejects_non_string_asset_keys():
     assert exc_info.value.code == "manifest_invalid_type"
 
 
+@pytest.mark.parametrize("asset_key", ["", " ", " design", "design "])
+def test_from_dict_rejects_invalid_asset_keys(asset_key):
+    data = _manifest_dict()
+    data["assets"][asset_key] = "config/other.json"
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_field"
+
+
 def test_constructor_rejects_non_string_asset_keys():
     data = _manifest_dict()
     data["assets"] = {
@@ -262,6 +277,17 @@ def test_constructor_rejects_non_string_asset_keys():
         ProjectManifest(**data)
 
     assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize("asset_key", ["", " ", " design", "design "])
+def test_constructor_rejects_invalid_asset_keys(asset_key):
+    data = _manifest_dict()
+    data["assets"][asset_key] = "config/other.json"
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_field"
 
 
 def test_constructor_rejects_invalid_asset_paths():
@@ -343,6 +369,16 @@ def test_from_dict_rejects_non_json_exam_values():
 def test_constructor_rejects_tuple_exam_values():
     data = _manifest_dict()
     data["exam"] = {"bad": ("choice", "judge")}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_constructor_rejects_list_subclass_exam_values():
+    data = _manifest_dict()
+    data["exam"] = {"bad": JsonList(["choice", "judge"])}
 
     with pytest.raises(ProjectValidationError) as exc_info:
         ProjectManifest(**data)

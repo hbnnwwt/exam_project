@@ -79,7 +79,7 @@ def _validate_asset_key(value: Any) -> str:
         raise ProjectValidationError(
             "project.json 资产键类型错误", code="manifest_invalid_type"
         )
-    if not value.strip():
+    if not value.strip() or value != value.strip():
         raise ProjectValidationError(
             "project.json 资产键无效", code="manifest_invalid_field"
         )
@@ -112,7 +112,7 @@ def _validate_json_value(value: Any, field: str) -> Any:
                 )
             validated[key] = _validate_json_value(nested_value, f"{field}.{key}")
         return validated
-    if isinstance(value, list):
+    if type(value) is list:
         return [_validate_json_value(item, field) for item in value]
     raise ProjectValidationError(
         f"project.json 字段类型错误: {field}", code="manifest_invalid_type"
