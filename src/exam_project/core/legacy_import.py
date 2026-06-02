@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from exam_project.core.checksum import build_checksums
+from exam_project.core.errors import ProjectError
 from exam_project.core.manifest import ProjectManifest
 from exam_project.core.package import ExamProjectPackage
 from exam_project.core.validation import validate_project
@@ -22,9 +23,9 @@ def import_legacy_project(legacy_root: Path, package_path: Path, name: str) -> N
     baseline_src = legacy_root / "config" / "blank_baseline.json"
 
     if not layout_src.is_file():
-        raise FileNotFoundError(f"缺少旧版布局文件: {layout_src}")
+        raise ProjectError(f"缺少旧版布局文件: {layout_src}")
     if not answers_src.is_file():
-        raise FileNotFoundError(f"缺少旧版参考答案: {answers_src}")
+        raise ProjectError(f"缺少旧版参考答案: {answers_src}")
 
     with tempfile.TemporaryDirectory(prefix="exam_project_import_") as temp:
         workdir = Path(temp)

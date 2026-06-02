@@ -5,7 +5,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from exam_project.core.errors import ProjectValidationError
+from exam_project.core.errors import ProjectError, ProjectValidationError
 from exam_project.core.legacy_import import import_legacy_project
 from exam_project.core.package import ExamProjectPackage
 
@@ -102,7 +102,7 @@ def test_import_legacy_project_rejects_missing_layout(tmp_path: Path) -> None:
     write_legacy_root(legacy)
     (legacy / "config" / "sheet_layout.json").unlink()
 
-    with pytest.raises(FileNotFoundError, match="缺少旧版布局文件"):
+    with pytest.raises(ProjectError, match="缺少旧版布局文件"):
         import_legacy_project(legacy, tmp_path / "imported.examproj", name="坏项目")
 
 
@@ -111,7 +111,7 @@ def test_import_legacy_project_rejects_missing_answers(tmp_path: Path) -> None:
     write_legacy_root(legacy)
     (legacy / "参考答案.xlsx").unlink()
 
-    with pytest.raises(FileNotFoundError, match="缺少旧版参考答案"):
+    with pytest.raises(ProjectError, match="缺少旧版参考答案"):
         import_legacy_project(legacy, tmp_path / "imported.examproj", name="坏项目")
 
 
