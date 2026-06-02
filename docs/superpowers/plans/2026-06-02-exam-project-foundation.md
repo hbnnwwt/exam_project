@@ -80,10 +80,12 @@ Create `tests/test_imports.py`:
 
 ```python
 import exam_project
+import exam_project.core
 
 
 def test_package_imports():
     assert exam_project.__version__ == "0.1.0"
+    assert exam_project.core is not None
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -118,9 +120,6 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
-
-[project.scripts]
-exam-project = "exam_project.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -1484,7 +1483,16 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run CLI tests**
+- [ ] **Step 4: Add console script entry point**
+
+Update `pyproject.toml`:
+
+```toml
+[project.scripts]
+exam-project = "exam_project.cli:main"
+```
+
+- [ ] **Step 5: Run CLI tests**
 
 Run:
 
@@ -1494,10 +1502,10 @@ python -m pytest tests/test_cli.py -v
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/exam_project/cli.py tests/test_cli.py
+git add pyproject.toml src/exam_project/cli.py tests/test_cli.py
 git commit -m "feat: add exam project CLI"
 ```
 
