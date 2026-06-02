@@ -37,6 +37,11 @@ def validate_asset_path(path: str) -> str:
         raise ProjectValidationError(f"项目资产路径不能是目录: {path}", code="invalid_asset_path")
     pure = PurePosixPath(path)
     parts = pure.parts
+    for part in parts:
+        if not part or part != part.strip():
+            raise ProjectValidationError(
+                f"项目资产路径不规范: {path}", code="invalid_asset_path"
+            )
     normalized = pure.as_posix()
     if normalized == "." or normalized != path:
         raise ProjectValidationError(f"项目资产路径不规范: {path}", code="invalid_asset_path")
@@ -107,7 +112,7 @@ def _validate_json_value(value: Any, field: str) -> Any:
                 )
             validated[key] = _validate_json_value(nested_value, f"{field}.{key}")
         return validated
-    if isinstance(value, list | tuple):
+    if isinstance(value, list):
         return [_validate_json_value(item, field) for item in value]
     raise ProjectValidationError(
         f"project.json 字段类型错误: {field}", code="manifest_invalid_type"

@@ -71,6 +71,8 @@ def test_from_json_rejects_invalid_input_types(text):
         "./x.txt",
         "config/./x.json",
         "config//x.json",
+        "config/ /x.json",
+        "config/\t/x.json",
         "config/",
         " config/x.json",
         "config/x.json ",
@@ -79,8 +81,10 @@ def test_from_json_rejects_invalid_input_types(text):
     ],
 )
 def test_rejects_unsafe_asset_paths(path):
-    with pytest.raises(ProjectValidationError):
+    with pytest.raises(ProjectValidationError) as exc_info:
         validate_asset_path(path)
+
+    assert exc_info.value.code == "invalid_asset_path"
 
 
 def test_accepts_relative_asset_path():
@@ -290,6 +294,16 @@ def test_from_dict_rejects_non_json_exam_values():
     assert exc_info.value.code == "manifest_invalid_type"
 
 
+def test_constructor_rejects_tuple_exam_values():
+    data = _manifest_dict()
+    data["exam"] = {"bad": ("choice", "judge")}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_constructor_rejects_non_finite_exam_floats(value):
     data = _manifest_dict()
@@ -381,6 +395,14 @@ def test_from_dict_copies_manifest_mappings():
     data["assets"]["layout"] = "config/other.json"
 
     assert manifest.assets["layout"] == "config/sheet_layout.json"
+
+
+def test_from_dict_copies_nested_exam_values():
+    data = _manifest_dict()
+    manifest = ProjectManifest.from_dict(data)
+    data["exam"]["question_types"].append("essay")
+
+    assert manifest.exam["question_types"] == ("choice", "judge")
 
 
 def test_to_dict_returns_deep_copy_of_exam():
