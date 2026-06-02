@@ -52,22 +52,48 @@ def _require_mapping(value: Any, field: str) -> Mapping[Any, Any]:
     return value
 
 
-def _coerce_int_field(data: Mapping[str, Any], field: str) -> int:
+def _coerce_int_value(value: Any, field: str) -> int:
     try:
-        return int(data[field])
+        return int(value)
     except (TypeError, ValueError) as exc:
         raise ProjectValidationError(
             f"project.json 字段无效: {field}", code="manifest_invalid_field"
         ) from exc
 
 
-def _coerce_str_field(data: Mapping[str, Any], field: str) -> str:
+def _coerce_int_field(data: Mapping[str, Any], field: str) -> int:
+    return _coerce_int_value(data[field], field)
+
+
+def _coerce_str_value(value: Any, field: str) -> str:
     try:
-        return str(data[field])
+        return str(value)
     except Exception as exc:
         raise ProjectValidationError(
             f"project.json 字段无效: {field}", code="manifest_invalid_field"
         ) from exc
+
+
+def _coerce_str_field(data: Mapping[str, Any], field: str) -> str:
+    return _coerce_str_value(data[field], field)
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {key: _freeze(nested_value) for key, nested_value in value.items()}
+        )
+    if isinstance(value, list | tuple):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw(nested_value) for key, nested_value in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -82,21 +108,9 @@ class ProjectManifest:
     checksums: Mapping[str, str]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "assets", MappingProxyType(dict(self.assets)))
-        object.__setattr__(self, "exam", MappingProxyType(dict(self.exam)))
-        object.__setattr__(self, "checksums", MappingProxyType(dict(self.checksums)))
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ProjectManifest":
-        data = _require_mapping(data, "project")
-        for key in REQUIRED_FIELDS:
-            if key not in data:
-                raise ProjectValidationError(
-                    f"project.json 缺少字段: {key}", code="manifest_missing_field"
-                )
-        raw_assets = _require_mapping(data["assets"], "assets")
-        raw_exam = _require_mapping(data["exam"], "exam")
-        raw_checksums = _require_mapping(data["checksums"], "checksums")
+        raw_assets = _require_mapping(self.assets, "assets")
+        raw_exam = _require_mapping(self.exam, "exam")
+        raw_checksums = _require_mapping(self.checksums, "checksums")
         for asset_key in REQUIRED_ASSETS:
             if asset_key not in raw_assets:
                 raise ProjectValidationError(
@@ -111,20 +125,54 @@ class ProjectManifest:
             validate_asset_path(path): checksum
             for path, checksum in raw_checksums.items()
         }
+        object.__setattr__(
+            self, "schema_version", _coerce_int_value(self.schema_version, "schema_version")
+        )
+        object.__setattr__(
+            self, "project_id", _coerce_str_value(self.project_id, "project_id")
+        )
+        object.__setattr__(self, "name", _coerce_str_value(self.name, "name"))
+        object.__setattr__(
+            self, "created_at", _coerce_str_value(self.created_at, "created_at")
+        )
+        object.__setattr__(
+            self, "updated_at", _coerce_str_value(self.updated_at, "updated_at")
+        )
+        object.__setattr__(self, "assets", _freeze(assets))
+        object.__setattr__(self, "exam", _freeze(dict(raw_exam)))
+        object.__setattr__(self, "checksums", _freeze(checksums))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ProjectManifest":
+        data = _require_mapping(data, "project")
+        for key in REQUIRED_FIELDS:
+            if key not in data:
+                raise ProjectValidationError(
+                    f"project.json 缺少字段: {key}", code="manifest_missing_field"
+                )
+        raw_assets = _require_mapping(data["assets"], "assets")
+        raw_exam = _require_mapping(data["exam"], "exam")
+        raw_checksums = _require_mapping(data["checksums"], "checksums")
         return cls(
             schema_version=_coerce_int_field(data, "schema_version"),
             project_id=_coerce_str_field(data, "project_id"),
             name=_coerce_str_field(data, "name"),
             created_at=_coerce_str_field(data, "created_at"),
             updated_at=_coerce_str_field(data, "updated_at"),
-            assets=assets,
+            assets=dict(raw_assets),
             exam=dict(raw_exam),
-            checksums=checksums,
+            checksums=dict(raw_checksums),
         )
 
     @classmethod
     def from_json(cls, text: str) -> "ProjectManifest":
-        return cls.from_dict(json.loads(text))
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ProjectValidationError(
+                "project.json 不是合法 JSON", code="manifest_invalid_json"
+            ) from exc
+        return cls.from_dict(data)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -133,9 +181,9 @@ class ProjectManifest:
             "name": self.name,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
-            "assets": dict(self.assets),
-            "exam": dict(self.exam),
-            "checksums": dict(self.checksums),
+            "assets": _thaw(self.assets),
+            "exam": _thaw(self.exam),
+            "checksums": _thaw(self.checksums),
         }
 
     def to_json(self) -> str:

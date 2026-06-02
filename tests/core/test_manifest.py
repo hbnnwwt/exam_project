@@ -45,6 +45,13 @@ def test_manifest_round_trip_json():
     assert json.loads(loaded.to_json())["name"] == "期末考试"
 
 
+def test_from_json_rejects_invalid_json():
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_json("{")
+
+    assert exc_info.value.code == "manifest_invalid_json"
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -117,11 +124,55 @@ def test_from_dict_rejects_bad_schema_version():
     assert exc_info.value.code == "manifest_invalid_field"
 
 
+def test_constructor_rejects_invalid_asset_paths():
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest(
+            schema_version=1,
+            project_id="project-1",
+            name="期末考试",
+            created_at="2026-06-02T20:00:00+08:00",
+            updated_at="2026-06-02T20:30:00+08:00",
+            assets={
+                "design": "../evil",
+                "layout": "config/sheet_layout.json",
+                "answers": "answers/reference_answers.xlsx",
+            },
+            exam={"student_id_digits": 10, "question_types": ["choice", "judge"]},
+            checksums={},
+        )
+
+
+def test_constructor_rejects_invalid_checksum_paths():
+    with pytest.raises(ProjectValidationError):
+        ProjectManifest(
+            schema_version=1,
+            project_id="project-1",
+            name="期末考试",
+            created_at="2026-06-02T20:00:00+08:00",
+            updated_at="2026-06-02T20:30:00+08:00",
+            assets={
+                "design": "design/answer_sheet.json",
+                "layout": "config/sheet_layout.json",
+                "answers": "answers/reference_answers.xlsx",
+            },
+            exam={"student_id_digits": 10, "question_types": ["choice", "judge"]},
+            checksums={"../evil": "sha256:x"},
+        )
+
+
 def test_manifest_mappings_are_immutable():
     manifest = ProjectManifest.from_dict(_manifest_dict())
 
     with pytest.raises(TypeError):
         manifest.assets["layout"] = "config/other.json"
+
+
+def test_manifest_nested_exam_values_are_immutable():
+    manifest = ProjectManifest.from_dict(_manifest_dict())
+
+    assert manifest.exam["question_types"] == ("choice", "judge")
+    with pytest.raises(AttributeError):
+        manifest.exam["question_types"].append("essay")
 
 
 def test_from_dict_copies_manifest_mappings():
@@ -130,3 +181,11 @@ def test_from_dict_copies_manifest_mappings():
     data["assets"]["layout"] = "config/other.json"
 
     assert manifest.assets["layout"] == "config/sheet_layout.json"
+
+
+def test_to_dict_returns_deep_copy_of_exam():
+    manifest = ProjectManifest.from_dict(_manifest_dict())
+    data = manifest.to_dict()
+    data["exam"]["question_types"].append("essay")
+
+    assert manifest.exam["question_types"] == ("choice", "judge")
