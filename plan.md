@@ -21,11 +21,13 @@
 - [x] Task 2：领域错误类型
 - [x] Task 3：Manifest 模型与安全资产路径
 - [x] Task 4：Checksum 工具
+- [x] Task 5：项目包打开与保存
 
 ## 审查记录
 
 - Task 3 已完成规格审查和代码质量审查；manifest 输入边界收紧为严格 JSON dict/list，资产路径和资产键均拒绝空白边界。
 - Task 4 已完成规格审查和代码质量审查；checksum 使用 SHA-256 分块读取，资产路径复用 manifest 安全校验。
+- Task 5 已完成规格审查和代码质量审查；ZIP 解包拒绝路径逃逸、重复条目、raw 反斜杠和 Windows 大小写碰撞，保存流程先验证临时包再替换原包。
 
 ## 后续计划
 
