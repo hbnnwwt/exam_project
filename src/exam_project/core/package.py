@@ -79,13 +79,20 @@ def _replace_directory(source: Path, target: Path) -> None:
             shutil.move(str(target), str(old_target))
         shutil.move(str(source), str(target))
     except Exception:
-        if (target.exists() or target.is_symlink()) and old_target.exists():
-            _cleanup_path(target)
+        restored_old = False
         if old_target.exists():
+            if target.exists() or target.is_symlink():
+                _remove_existing_path(target)
+            if target.exists() or target.is_symlink():
+                raise
             shutil.move(str(old_target), str(target))
+            restored_old = True
+        if not restored_old and old_target.exists():
+            raise
         raise
     finally:
-        _cleanup_path(old_parent)
+        if not old_target.exists():
+            _cleanup_path(old_parent)
 
 
 def _assert_safe_open_target(package_path: Path, target_dir: Path) -> None:
@@ -98,6 +105,16 @@ def _assert_safe_open_target(package_path: Path, target_dir: Path) -> None:
         return
     else:
         raise ProjectPackageError(f"Refusing to open project into unsafe path: {target_dir}")
+
+
+def _package_artifact_paths(package_path: Path) -> tuple[Path, Path, Path, Path]:
+    backup_path = package_path.with_suffix(package_path.suffix + ".bak")
+    return (
+        package_path,
+        package_path.with_suffix(package_path.suffix + ".tmp"),
+        backup_path,
+        backup_path.with_suffix(backup_path.suffix + ".tmp"),
+    )
 
 
 def _casefold_zip_name(name: str) -> str:
@@ -145,9 +162,8 @@ class ExamProjectPackage:
             raise ProjectPackageError(f"Project workdir does not exist: {workdir}")
 
         package_path.parent.mkdir(parents=True, exist_ok=True)
-        package_resolved = package_path.resolve()
         workdir_resolved = workdir.resolve()
-        excludes = {package_resolved}
+        excludes = {path.resolve() for path in _package_artifact_paths(package_path)}
         excludes.update(path.resolve() for path in exclude_paths)
         files = [
             path

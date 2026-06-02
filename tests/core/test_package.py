@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import exam_project.core.package as package_module
 from exam_project.core.errors import ProjectPackageError
 from exam_project.core.package import ExamProjectPackage, safe_extract_zip
 
@@ -213,6 +214,27 @@ def test_save_excludes_package_artifacts_when_package_is_inside_workdir(
     assert "sample.examproj.bak.tmp" not in names
 
 
+def test_pack_excludes_package_artifacts_by_default(tmp_path: Path) -> None:
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = workdir / "sample.examproj"
+    package_path.write_bytes(b"old package")
+    package_path.with_suffix(".examproj.tmp").write_bytes(b"old tmp")
+    package_path.with_suffix(".examproj.bak").write_bytes(b"old backup")
+    package_path.with_suffix(".examproj.bak.tmp").write_bytes(b"old backup tmp")
+
+    ExamProjectPackage.pack(workdir, package_path)
+
+    with zipfile.ZipFile(package_path, "r") as zf:
+        names = set(zf.namelist())
+
+    assert "sample.examproj" not in names
+    assert "sample.examproj.tmp" not in names
+    assert "sample.examproj.bak" not in names
+    assert "sample.examproj.bak.tmp" not in names
+
+
 def test_pack_skips_file_symlinks(tmp_path: Path) -> None:
     outside = tmp_path / "outside.txt"
     outside.write_text("secret", encoding="utf-8")
@@ -283,6 +305,23 @@ def test_open_rejects_package_ancestor_as_target(tmp_path: Path) -> None:
     assert package_path.exists()
 
 
+def test_open_allows_package_sibling_target(tmp_path: Path) -> None:
+    package_dir = tmp_path / "packages"
+    package_dir.mkdir()
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = package_dir / "sample.examproj"
+    ExamProjectPackage.pack(workdir, package_path)
+    target_dir = tmp_path / "opened"
+
+    opened = ExamProjectPackage.open(package_path, target_dir)
+
+    assert opened.workdir == target_dir
+    assert opened.manifest.name == "Final Exam"
+    assert package_path.exists()
+
+
 def test_open_restores_existing_target_when_replace_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -295,6 +334,7 @@ def test_open_restores_existing_target_when_replace_fails(
     target_dir.mkdir()
     (target_dir / "marker.txt").write_text("keep", encoding="utf-8")
     real_move = shutil.move
+    real_remove_existing_path = package_module._remove_existing_path
     moves = 0
 
     def fail_second_move(src: str, dst: str):
@@ -313,6 +353,47 @@ def test_open_restores_existing_target_when_replace_fails(
 
     assert (target_dir / "marker.txt").read_text(encoding="utf-8") == "keep"
     assert not (target_dir / "partial.txt").exists()
+
+
+def test_open_preserves_old_target_when_partial_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = tmp_path / "sample.examproj"
+    ExamProjectPackage.pack(workdir, package_path)
+    target_dir = tmp_path / "opened"
+    target_dir.mkdir()
+    (target_dir / "marker.txt").write_text("keep", encoding="utf-8")
+    real_move = shutil.move
+    real_remove_existing_path = package_module._remove_existing_path
+    moves = 0
+
+    def fail_second_move(src: str, dst: str):
+        nonlocal moves
+        moves += 1
+        if moves == 2:
+            Path(dst).mkdir(parents=True, exist_ok=True)
+            (Path(dst) / "partial.txt").write_text("partial", encoding="utf-8")
+            raise OSError("simulated move failure")
+        return real_move(src, dst)
+
+    def fail_target_cleanup(path: Path) -> None:
+        if path == target_dir:
+            raise OSError("simulated cleanup failure")
+        return real_remove_existing_path(path)
+
+    monkeypatch.setattr(shutil, "move", fail_second_move)
+    monkeypatch.setattr(package_module, "_remove_existing_path", fail_target_cleanup)
+
+    with pytest.raises(OSError):
+        ExamProjectPackage.open(package_path, target_dir)
+
+    old_dirs = list(tmp_path.glob(".opened.old-*"))
+    assert len(old_dirs) == 1
+    assert (old_dirs[0] / "opened" / "marker.txt").read_text(encoding="utf-8") == "keep"
+    assert (target_dir / "partial.txt").read_text(encoding="utf-8") == "partial"
 
 
 def test_save_does_not_replace_existing_package_when_verify_fails(tmp_path: Path) -> None:
