@@ -27,6 +27,7 @@
 - [x] Task 8：打开项目包时做完整项目验证
 - [x] Task 9：旧系统资产导入
 - [x] Task 10：CLI Inspect 与 Legacy Import
+- [x] Task 11：README 更新
 
 ## 审查记录
 
@@ -38,6 +39,7 @@
 - Task 8 已完成规格审查和代码质量审查；打开项目包时在 staging 目录解析 manifest 后执行完整项目校验，验证失败不会替换已有目标目录，checksum 声明缺失资产会失败，缺失 baseline 仍允许。
 - Task 9 已完成规格审查和代码质量审查；旧系统导入只迁移 layout、参考答案、可选 baseline 和设计占位资产，先完整校验再保存，坏旧资产不会覆盖已有项目包。
 - Task 10 已完成规格审查和代码质量审查；CLI 只暴露 import-legacy 和 inspect，inspect 使用临时子目录避免 `.old-*` 残留，项目错误以退出码 2 和用户可读 stderr 返回。
+- Task 11 已完成文档审查；README 记录 foundation 范围、开发命令、CLI 用法和 `.examproj` 包契约，避免承诺尚未迁移的 UI、识别和评分工作流。
 
 ## 后续计划
 
