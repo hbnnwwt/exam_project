@@ -159,6 +159,21 @@ def test_validate_answer_workbook_rejects_blank_options(tmp_path: Path) -> None:
     assert exc.value.code == "invalid_layout_options"
 
 
+def test_validate_answer_workbook_rejects_blank_string_options(
+    tmp_path: Path,
+) -> None:
+    layout = {
+        "choice": {"question_start": 1, "question_count": 1, "options": " "},
+    }
+    path = tmp_path / "answers.xlsx"
+    make_xlsx(path, {1: "A"})
+
+    with pytest.raises(ProjectValidationError) as exc:
+        validate_answer_workbook(path, layout)
+
+    assert exc.value.code == "invalid_layout_options"
+
+
 def test_validate_answer_workbook_rejects_invalid_workbook_bytes(
     tmp_path: Path,
 ) -> None:

@@ -50,7 +50,13 @@ def _options_for(q_type: str, layout: dict) -> list[str] | None:
     if options is None:
         return None
     if isinstance(options, str):
-        return [options.strip()]
+        normalized_text = options.strip()
+        if not normalized_text:
+            raise ProjectValidationError(
+                f"答题卡布局的 {TYPE_LABELS.get(q_type, q_type)} 选项无效",
+                code="invalid_layout_options",
+            )
+        return [normalized_text]
     if isinstance(options, Mapping) or not isinstance(options, Sequence):
         raise ProjectValidationError(
             f"答题卡布局的 {TYPE_LABELS.get(q_type, q_type)} 选项无效",
