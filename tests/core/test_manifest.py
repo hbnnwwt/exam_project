@@ -282,6 +282,28 @@ def test_from_dict_rejects_non_json_exam_values():
     assert exc_info.value.code == "manifest_invalid_type"
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_constructor_rejects_non_finite_exam_floats(value):
+    data = _manifest_dict()
+    data["exam"] = {"bad": value}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_from_dict_rejects_non_finite_exam_floats(value):
+    data = _manifest_dict()
+    data["exam"] = {"bad": value}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
 def test_constructor_rejects_non_json_checksum_values():
     with pytest.raises(ProjectValidationError) as exc_info:
         ProjectManifest(
@@ -336,4 +358,4 @@ def test_to_dict_returns_deep_copy_of_exam():
 def test_to_dict_output_is_json_serializable():
     manifest = ProjectManifest.from_dict(_manifest_dict())
 
-    json.dumps(manifest.to_dict(), ensure_ascii=False)
+    json.dumps(manifest.to_dict(), ensure_ascii=False, allow_nan=False)

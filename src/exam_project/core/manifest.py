@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import json
+import math
 from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Any
@@ -81,7 +82,13 @@ def _validate_asset_key(value: Any) -> str:
 
 
 def _validate_json_value(value: Any, field: str) -> Any:
-    if value is None or isinstance(value, str | int | float | bool):
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ProjectValidationError(
+                f"project.json 字段类型错误: {field}", code="manifest_invalid_type"
+            )
+        return value
+    if value is None or isinstance(value, str | int | bool):
         return value
     if isinstance(value, Mapping):
         validated = {}
