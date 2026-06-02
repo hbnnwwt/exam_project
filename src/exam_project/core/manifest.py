@@ -81,6 +81,14 @@ def _validate_asset_key(value: Any) -> str:
     return value
 
 
+def _validate_checksum_value(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ProjectValidationError(
+            "project.json checksum 值类型错误", code="manifest_invalid_type"
+        )
+    return value
+
+
 def _validate_json_value(value: Any, field: str) -> Any:
     if isinstance(value, float):
         if not math.isfinite(value):
@@ -151,9 +159,7 @@ class ProjectManifest:
         }
         checksums = {}
         for path, checksum in raw_checksums.items():
-            checksums[validate_asset_path(path)] = _validate_json_value(
-                checksum, f"checksums.{path}"
-            )
+            checksums[validate_asset_path(path)] = _validate_checksum_value(checksum)
         object.__setattr__(
             self, "schema_version", _validate_schema_version(self.schema_version)
         )
@@ -195,9 +201,13 @@ class ProjectManifest:
 
     @classmethod
     def from_json(cls, text: str) -> "ProjectManifest":
+        if not isinstance(text, str):
+            raise ProjectValidationError(
+                "project.json 不是合法 JSON", code="manifest_invalid_json"
+            )
         try:
             data = json.loads(text)
-        except json.JSONDecodeError as exc:
+        except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ProjectValidationError(
                 "project.json 不是合法 JSON", code="manifest_invalid_json"
             ) from exc

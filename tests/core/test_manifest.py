@@ -52,6 +52,14 @@ def test_from_json_rejects_invalid_json():
     assert exc_info.value.code == "manifest_invalid_json"
 
 
+@pytest.mark.parametrize("text", [None, b"\xff"])
+def test_from_json_rejects_invalid_input_types(text):
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_json(text)
+
+    assert exc_info.value.code == "manifest_invalid_json"
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -320,6 +328,34 @@ def test_constructor_rejects_non_json_checksum_values():
             exam={"student_id_digits": 10, "question_types": ["choice", "judge"]},
             checksums={"config/sheet_layout.json": object()},
         )
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [123, True, ["sha256:x"], {"alg": "sha256"}, None],
+)
+def test_constructor_rejects_non_string_checksum_values(value):
+    data = _manifest_dict()
+    data["checksums"] = {"config/sheet_layout.json": value}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(**data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [123, True, ["sha256:x"], {"alg": "sha256"}, None],
+)
+def test_from_dict_rejects_non_string_checksum_values(value):
+    data = _manifest_dict()
+    data["checksums"] = {"config/sheet_layout.json": value}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
 
     assert exc_info.value.code == "manifest_invalid_type"
 
