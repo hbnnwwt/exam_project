@@ -5,6 +5,7 @@ import zipfile
 import zlib
 from pathlib import Path
 
+import openpyxl
 import pytest
 
 import exam_project.core.package as package_module
@@ -12,13 +13,36 @@ from exam_project.core.errors import ProjectPackageError
 from exam_project.core.package import ExamProjectPackage, safe_extract_zip
 
 
+def write_reference_answers(path: Path, answers: dict[object, object]) -> None:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.cell(row=1, column=1, value="student_id")
+    ws.cell(row=2, column=1, value="answer")
+    for idx, (q_num, answer) in enumerate(answers.items(), start=2):
+        ws.cell(row=1, column=idx, value=q_num)
+        ws.cell(row=2, column=idx, value=answer)
+    wb.save(path)
+    wb.close()
+
+
 def write_minimal_workdir(root: Path, name: str = "Final Exam") -> None:
     (root / "design").mkdir(exist_ok=True)
     (root / "config").mkdir(exist_ok=True)
     (root / "answers").mkdir(exist_ok=True)
     (root / "design" / "answer_sheet.json").write_text("{}", encoding="utf-8")
-    (root / "config" / "sheet_layout.json").write_text("{}", encoding="utf-8")
-    (root / "answers" / "reference_answers.xlsx").write_bytes(b"placeholder")
+    (root / "config" / "sheet_layout.json").write_text(
+        json.dumps(
+            {
+                "choice": {
+                    "question_start": 1,
+                    "question_count": 1,
+                    "options": ["A", "B"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_reference_answers(root / "answers" / "reference_answers.xlsx", {1: "A"})
     (root / "project.json").write_text(
         json.dumps(
             {

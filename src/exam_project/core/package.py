@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from exam_project.core.errors import ProjectPackageError
 from exam_project.core.manifest import ProjectManifest
 from exam_project.core.project import ExamProject
+from exam_project.core.validation import validate_project
 
 
 def _zip_entry_name(name: str) -> str:
@@ -193,6 +194,7 @@ class ExamProjectPackage:
                 raise ProjectPackageError("Project package is missing project.json")
 
             manifest = ProjectManifest.from_json(manifest_path.read_text(encoding="utf-8"))
+            validate_project(staging_dir, manifest)
             _replace_directory(staging_dir, target_dir)
             return ExamProject(package_path=package_path, workdir=target_dir, manifest=manifest)
         finally:

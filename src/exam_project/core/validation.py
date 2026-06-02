@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,9 @@ from zipfile import BadZipFile, LargeZipFile
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
+from exam_project.core.checksum import checksum_file
 from exam_project.core.errors import ProjectValidationError
+from exam_project.core.manifest import ProjectManifest, REQUIRED_ASSETS, validate_asset_path
 
 
 QUESTION_TYPES = ("choice", "judge", "essay")
@@ -151,3 +154,63 @@ def validate_answer_workbook(path: Path, layout: dict) -> None:
                 )
     finally:
         wb.close()
+
+
+def _asset_path(workdir: Path, rel: str) -> Path:
+    return workdir / validate_asset_path(rel)
+
+
+def validate_project_assets(workdir: Path, manifest: ProjectManifest) -> None:
+    for asset_key in REQUIRED_ASSETS:
+        rel = manifest.assets[asset_key]
+        if not _asset_path(workdir, rel).is_file():
+            raise ProjectValidationError(
+                f"项目缺少必需资产: {rel}",
+                code="missing_asset",
+            )
+
+    for rel, expected in manifest.checksums.items():
+        path = _asset_path(workdir, rel)
+        if not path.is_file():
+            raise ProjectValidationError(
+                f"项目声明了 checksum 但资产缺失: {rel}",
+                code="missing_checksum_asset",
+            )
+        try:
+            actual = checksum_file(path)
+        except OSError as exc:
+            raise ProjectValidationError(
+                f"无法读取项目资产: {rel}",
+                code="asset_unreadable",
+            ) from exc
+        if actual != expected:
+            raise ProjectValidationError(
+                f"项目资产校验失败: {rel}",
+                code="checksum_mismatch",
+            )
+
+
+def _load_layout(path: Path) -> dict:
+    try:
+        layout = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+        raise ProjectValidationError(
+            f"答题卡布局不是合法 JSON: {path}",
+            code="invalid_layout_json",
+        ) from exc
+    if not isinstance(layout, dict):
+        raise ProjectValidationError(
+            f"答题卡布局不是 JSON 对象: {path}",
+            code="invalid_layout_json",
+        )
+    return layout
+
+
+def validate_project_business_rules(workdir: Path, manifest: ProjectManifest) -> None:
+    layout = _load_layout(_asset_path(workdir, manifest.assets["layout"]))
+    validate_answer_workbook(_asset_path(workdir, manifest.assets["answers"]), layout)
+
+
+def validate_project(workdir: Path, manifest: ProjectManifest) -> None:
+    validate_project_assets(workdir, manifest)
+    validate_project_business_rules(workdir, manifest)
