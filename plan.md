@@ -28,6 +28,7 @@
 - [x] Task 9：旧系统资产导入
 - [x] Task 10：CLI Inspect 与 Legacy Import
 - [x] Task 11：README 更新
+- [x] Task 12：最终验证
 
 ## 审查记录
 
@@ -40,6 +41,13 @@
 - Task 9 已完成规格审查和代码质量审查；旧系统导入只迁移 layout、参考答案、可选 baseline 和设计占位资产，先完整校验再保存，坏旧资产不会覆盖已有项目包。
 - Task 10 已完成规格审查和代码质量审查；CLI 只暴露 import-legacy 和 inspect，inspect 使用临时子目录避免 `.old-*` 残留，项目错误以退出码 2 和用户可读 stderr 返回。
 - Task 11 已完成文档审查；README 记录 foundation 范围、开发命令、CLI 用法和 `.examproj` 包契约，避免承诺尚未迁移的 UI、识别和评分工作流。
+- Task 12 已完成最终验证；全量测试 `163 passed, 1 skipped`，手工 CLI import/inspect 烟测通过，GitHub 分支已按里程碑推送。
+
+## 最终复盘
+
+- 已完成 `.examproj` foundation：manifest、checksum、安全 ZIP 打包/打开/保存、运行期项目对象、业务校验、完整打开前验证、旧系统资产导入和 CLI。
+- 旧系统真实根目录的 `config/sheet_layout.json` 与根目录 `参考答案.xlsx` 本身错配；新导入器会拒绝这种坏组合，这是正确行为，不应绕过校验。
+- 当前阶段没有迁移答题卡设计器 UI、识别流水线、评分 UI、空白页校对工作流；这些属于后续阶段。
 
 ## 后续计划
 
