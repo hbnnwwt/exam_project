@@ -78,6 +78,25 @@ def _coerce_str_field(data: Mapping[str, Any], field: str) -> str:
     return _coerce_str_value(data[field], field)
 
 
+def _validate_json_value(value: Any, field: str) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, Mapping):
+        validated = {}
+        for key, nested_value in value.items():
+            if not isinstance(key, str):
+                raise ProjectValidationError(
+                    f"project.json 字段类型错误: {field}", code="manifest_invalid_type"
+                )
+            validated[key] = _validate_json_value(nested_value, f"{field}.{key}")
+        return validated
+    if isinstance(value, list | tuple):
+        return [_validate_json_value(item, field) for item in value]
+    raise ProjectValidationError(
+        f"project.json 字段类型错误: {field}", code="manifest_invalid_type"
+    )
+
+
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType(
@@ -121,10 +140,11 @@ class ProjectManifest:
             asset_key: validate_asset_path(path)
             for asset_key, path in raw_assets.items()
         }
-        checksums = {
-            validate_asset_path(path): checksum
-            for path, checksum in raw_checksums.items()
-        }
+        checksums = {}
+        for path, checksum in raw_checksums.items():
+            checksums[validate_asset_path(path)] = _validate_json_value(
+                checksum, f"checksums.{path}"
+            )
         object.__setattr__(
             self, "schema_version", _coerce_int_value(self.schema_version, "schema_version")
         )
@@ -139,7 +159,7 @@ class ProjectManifest:
             self, "updated_at", _coerce_str_value(self.updated_at, "updated_at")
         )
         object.__setattr__(self, "assets", _freeze(assets))
-        object.__setattr__(self, "exam", _freeze(dict(raw_exam)))
+        object.__setattr__(self, "exam", _freeze(_validate_json_value(raw_exam, "exam")))
         object.__setattr__(self, "checksums", _freeze(checksums))
 
     @classmethod
@@ -187,4 +207,9 @@ class ProjectManifest:
         }
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+        try:
+            return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
+        except TypeError as exc:
+            raise ProjectValidationError(
+                "project.json 包含非 JSON 值", code="manifest_invalid_type"
+            ) from exc

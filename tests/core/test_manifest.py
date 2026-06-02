@@ -160,6 +160,56 @@ def test_constructor_rejects_invalid_checksum_paths():
         )
 
 
+def test_constructor_rejects_non_json_exam_values():
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(
+            schema_version=1,
+            project_id="project-1",
+            name="期末考试",
+            created_at="2026-06-02T20:00:00+08:00",
+            updated_at="2026-06-02T20:30:00+08:00",
+            assets={
+                "design": "design/answer_sheet.json",
+                "layout": "config/sheet_layout.json",
+                "answers": "answers/reference_answers.xlsx",
+            },
+            exam={"bad": {1, 2}},
+            checksums={},
+        )
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_from_dict_rejects_non_json_exam_values():
+    data = _manifest_dict()
+    data["exam"] = {"bad": {1, 2}}
+
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest.from_dict(data)
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
+def test_constructor_rejects_non_json_checksum_values():
+    with pytest.raises(ProjectValidationError) as exc_info:
+        ProjectManifest(
+            schema_version=1,
+            project_id="project-1",
+            name="期末考试",
+            created_at="2026-06-02T20:00:00+08:00",
+            updated_at="2026-06-02T20:30:00+08:00",
+            assets={
+                "design": "design/answer_sheet.json",
+                "layout": "config/sheet_layout.json",
+                "answers": "answers/reference_answers.xlsx",
+            },
+            exam={"student_id_digits": 10, "question_types": ["choice", "judge"]},
+            checksums={"config/sheet_layout.json": object()},
+        )
+
+    assert exc_info.value.code == "manifest_invalid_type"
+
+
 def test_manifest_mappings_are_immutable():
     manifest = ProjectManifest.from_dict(_manifest_dict())
 
@@ -189,3 +239,9 @@ def test_to_dict_returns_deep_copy_of_exam():
     data["exam"]["question_types"].append("essay")
 
     assert manifest.exam["question_types"] == ("choice", "judge")
+
+
+def test_to_dict_output_is_json_serializable():
+    manifest = ProjectManifest.from_dict(_manifest_dict())
+
+    json.dumps(manifest.to_dict(), ensure_ascii=False)
