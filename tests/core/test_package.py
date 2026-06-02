@@ -1,4 +1,5 @@
 import json
+import shutil
 import struct
 import zipfile
 import zlib
@@ -141,6 +142,16 @@ def test_safe_extract_zip_rejects_duplicate_entries(tmp_path: Path) -> None:
         safe_extract_zip(package_path, tmp_path / "out")
 
 
+def test_safe_extract_zip_rejects_casefold_duplicate_entries(tmp_path: Path) -> None:
+    package_path = tmp_path / "evil.examproj"
+    with zipfile.ZipFile(package_path, "w") as zf:
+        zf.writestr("Project.json", "{}")
+        zf.writestr("project.json", "[]")
+
+    with pytest.raises(ProjectPackageError):
+        safe_extract_zip(package_path, tmp_path / "out")
+
+
 @pytest.mark.parametrize(
     "entry_name",
     [
@@ -251,6 +262,57 @@ def test_open_rejects_package_parent_as_target(tmp_path: Path) -> None:
         ExamProjectPackage.open(package_path, tmp_path)
 
     assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_open_rejects_package_ancestor_as_target(tmp_path: Path) -> None:
+    target_dir = tmp_path / "opened"
+    package_dir = target_dir / "packages"
+    package_dir.mkdir(parents=True)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = package_dir / "sample.examproj"
+    ExamProjectPackage.pack(workdir, package_path)
+    marker = target_dir / "marker.txt"
+    marker.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ProjectPackageError):
+        ExamProjectPackage.open(package_path, target_dir)
+
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert package_path.exists()
+
+
+def test_open_restores_existing_target_when_replace_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    write_minimal_workdir(workdir)
+    package_path = tmp_path / "sample.examproj"
+    ExamProjectPackage.pack(workdir, package_path)
+    target_dir = tmp_path / "opened"
+    target_dir.mkdir()
+    (target_dir / "marker.txt").write_text("keep", encoding="utf-8")
+    real_move = shutil.move
+    moves = 0
+
+    def fail_second_move(src: str, dst: str):
+        nonlocal moves
+        moves += 1
+        if moves == 2:
+            Path(dst).mkdir(parents=True, exist_ok=True)
+            (Path(dst) / "partial.txt").write_text("partial", encoding="utf-8")
+            raise OSError("simulated move failure")
+        return real_move(src, dst)
+
+    monkeypatch.setattr(shutil, "move", fail_second_move)
+
+    with pytest.raises(OSError):
+        ExamProjectPackage.open(package_path, target_dir)
+
+    assert (target_dir / "marker.txt").read_text(encoding="utf-8") == "keep"
+    assert not (target_dir / "partial.txt").exists()
 
 
 def test_save_does_not_replace_existing_package_when_verify_fails(tmp_path: Path) -> None:

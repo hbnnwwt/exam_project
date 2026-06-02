@@ -79,7 +79,9 @@ def _replace_directory(source: Path, target: Path) -> None:
             shutil.move(str(target), str(old_target))
         shutil.move(str(source), str(target))
     except Exception:
-        if not (target.exists() or target.is_symlink()) and old_target.exists():
+        if (target.exists() or target.is_symlink()) and old_target.exists():
+            _cleanup_path(target)
+        if old_target.exists():
             shutil.move(str(old_target), str(target))
         raise
     finally:
@@ -90,8 +92,16 @@ def _assert_safe_open_target(package_path: Path, target_dir: Path) -> None:
     _assert_safe_replace_target(target_dir)
     package_resolved = package_path.resolve()
     target_resolved = target_dir.resolve()
-    if target_resolved in {package_resolved, package_resolved.parent}:
+    try:
+        package_resolved.relative_to(target_resolved)
+    except ValueError:
+        return
+    else:
         raise ProjectPackageError(f"Refusing to open project into unsafe path: {target_dir}")
+
+
+def _casefold_zip_name(name: str) -> str:
+    return "/".join(part.casefold() for part in PurePosixPath(name).parts)
 
 
 def _collect_zip_entries(infos: list[zipfile.ZipInfo]) -> dict[zipfile.ZipInfo, str]:
@@ -99,9 +109,10 @@ def _collect_zip_entries(infos: list[zipfile.ZipInfo]) -> dict[zipfile.ZipInfo, 
     seen: set[str] = set()
     for info in infos:
         name = _zip_entry_name(_raw_zip_entry_name(info))
-        if name in seen:
+        casefold_name = _casefold_zip_name(name)
+        if casefold_name in seen:
             raise ProjectPackageError(f"Project package contains duplicate path: {name}")
-        seen.add(name)
+        seen.add(casefold_name)
         entries[info] = name
     return entries
 
@@ -154,7 +165,10 @@ class ExamProjectPackage:
     @staticmethod
     def open(package_path: Path, target_dir: Path) -> ExamProject:
         _assert_safe_open_target(package_path, target_dir)
-        staging_root = Path(tempfile.mkdtemp(prefix="exam_project_open_"))
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging_root = Path(
+            tempfile.mkdtemp(prefix=f".{target_dir.name}.open-", dir=target_dir.parent)
+        )
         staging_dir = staging_root / "opened"
         try:
             safe_extract_zip(package_path, staging_dir)
