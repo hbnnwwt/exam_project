@@ -57,6 +57,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "[Install] exam_project package (editable) ..."
+"$PYTHON_CMD" -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "[Error] Failed to install exam_project package."
+    exit 1
+fi
+
 echo
 echo "========================================"
 echo "Setup completed successfully!"

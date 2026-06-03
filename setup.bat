@@ -81,6 +81,14 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
+echo [Install] exam_project package (editable) ...
+"%PYTHON_EXE%" -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn >nul 2>&1
+if !errorlevel! neq 0 (
+    echo [Error] Failed to install exam_project package.
+    pause
+    exit /b 1
+)
+
 echo.
 echo ========================================
 echo Setup completed successfully!
