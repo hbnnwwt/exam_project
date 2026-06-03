@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.exam_project_workspace/
+*.examproj
+*.examproj.bak
+*.examproj.tmp

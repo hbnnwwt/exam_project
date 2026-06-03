@@ -74,12 +74,19 @@ run_gui.bat
 
 The GUI is a thin Streamlit front end for the current foundation features:
 
-- create a new blank `.examproj`
+- create a new blank `.examproj` and open it as the current project
+- open an existing `.examproj`
+- save and save-as the current project package
 - import old project assets into `.examproj`
 - inspect an existing `.examproj` manifest
+- enter a project workspace with single-sheet and batch grading tabs
 
-It does not yet migrate the old recognition, grading, calibration, or designer
-workflows.
+The current grading tabs reuse the old `auto_grading_system` single and batch
+views through a project adapter. They read the open project's layout and
+reference-answer assets instead of the old global `config/sheet_layout.json`
+and `参考答案.xlsx`.
+
+Answer-sheet designer and blank calibration workflows are not migrated yet.
 
 ## Package Contract
 
