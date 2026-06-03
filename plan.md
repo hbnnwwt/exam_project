@@ -35,6 +35,28 @@
 - [x] Task 16：项目工作区接入答题卡设计器
 - [x] Task 17：恢复在线 OCR 配置并接入空白试卷校对
 - [x] Task 18：收口项目路径访问器并约束 legacy import 副作用
+- [x] Task 19：完整重写 exam_project 自有的识别+评分核心（Phase A 17/17）
+- [x] Task 20：完整重写答题卡生成器（Phase C 5/5）
+- [x] Task 21：完整重写 UI 视图（Phase D 5/5）
+- [x] Task 22：删除 grading_adapter，app.py 直接调用 exam_project views
+
+## 最终状态
+
+所有 22 个旧模块从 auto_grading_system 迁出，从零重写进 exam_project：
+- `recognition/` (10 模块): types / constants / preprocess / layout / bubble_base /
+  choice / judge / essay / student_id / blank_calibrator
+- `grading/` (6 模块): logger / defaults / config_validator / pipeline / marker /
+  grading / llm_grader
+- `answer_sheet/` (5 模块): schema / components / layout_engine / html_renderer /
+  config_exporter
+- `gui/views/` (5 模块): components / designer / calibration / single / batch
+
+`grading_adapter.py`（252 行适配层）已删除。`app.py` 直接调用
+exam_project 自有视图。识别 LAYOUT 全局彻底消除。
+
+测试：479 passed, 1 skipped（含新模块的完整单元测试）。
+
+保留：`core/legacy_import.py` 和 `cli.py import-legacy` 作为一次性迁移工具。
 
 ## 审查记录
 
