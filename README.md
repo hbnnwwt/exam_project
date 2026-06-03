@@ -79,14 +79,18 @@ The GUI is a thin Streamlit front end for the current foundation features:
 - save and save-as the current project package
 - import old project assets into `.examproj`
 - inspect an existing `.examproj` manifest
-- enter a project workspace with single-sheet and batch grading tabs
+- design an answer sheet inside the current project workspace
+- enter a grading workspace with both single-sheet and batch grading tabs
 
-The current grading tabs reuse the old `auto_grading_system` single and batch
-views through a project adapter. They read the open project's layout and
-reference-answer assets instead of the old global `config/sheet_layout.json`
-and `参考答案.xlsx`.
+The current designer and grading tabs reuse the old `auto_grading_system`
+Streamlit views through project adapters. They read and write the open
+project's design, layout, reference-answer, and output assets instead of the old
+global `config/sheet_layout.json`, `saved_designs`, and `参考答案.xlsx`.
 
-Answer-sheet designer and blank calibration workflows are not migrated yet.
+The single-sheet view is kept for process debugging and classroom
+demonstration. The batch view is kept for batch grading.
+
+Blank calibration is not migrated yet.
 
 ## Package Contract
 

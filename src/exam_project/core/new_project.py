@@ -28,14 +28,65 @@ def _write_blank_answers(path: Path) -> None:
     wb.close()
 
 
+def _blank_answer_sheet_design(name: str, student_id_digits: int) -> dict:
+    return {
+        "meta": {
+            "title": name,
+            "paper_size": "A4",
+            "numbering_mode": "continuous",
+        },
+        "student_id": {"digit_count": student_id_digits},
+        "pages": [
+            {
+                "sections": [
+                    {
+                        "type": "student_id",
+                        "question_start": 0,
+                        "question_count": 0,
+                        "digit_count": student_id_digits,
+                    },
+                    {
+                        "type": "choice",
+                        "question_start": 1,
+                        "question_count": 20,
+                        "options": ["A", "B", "C", "D"],
+                        "score": 3,
+                    },
+                ]
+            },
+            {
+                "sections": [
+                    {
+                        "type": "judge",
+                        "question_start": 21,
+                        "question_count": 10,
+                        "options": ["T", "F"],
+                        "score": 2,
+                    },
+                    {
+                        "type": "essay",
+                        "question_start": 31,
+                        "question_count": 1,
+                        "lines_per_question": 8,
+                        "score": 10,
+                    },
+                ]
+            },
+        ],
+    }
+
+
 def create_exam_project(
     package_path: Path,
     *,
     name: str,
     student_id_digits: int = 10,
 ) -> None:
-    if type(student_id_digits) is not int or student_id_digits < 1:
-        raise ProjectValidationError("学号位数必须大于 0", code="invalid_student_id_digits")
+    if type(student_id_digits) is not int or not (6 <= student_id_digits <= 14):
+        raise ProjectValidationError(
+            "学号位数必须在 6 到 14 之间",
+            code="invalid_student_id_digits",
+        )
 
     with tempfile.TemporaryDirectory(prefix="exam_project_new_") as temp:
         workdir = Path(temp)
@@ -47,11 +98,7 @@ def create_exam_project(
 
         (workdir / "design" / "answer_sheet.json").write_text(
             json.dumps(
-                {
-                    "schema_version": 1,
-                    "title": name,
-                    "sections": [],
-                },
+                _blank_answer_sheet_design(name, student_id_digits),
                 ensure_ascii=False,
                 indent=2,
             ),

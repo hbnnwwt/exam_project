@@ -162,7 +162,7 @@ def test_cli_new_reports_invalid_student_id_digits_without_traceback(
     )
 
     assert result.returncode == 2
-    assert "学号位数必须大于 0" in result.stderr
+    assert "学号位数必须在 6 到 14 之间" in result.stderr
     assert "Traceback" not in result.stderr
 
 

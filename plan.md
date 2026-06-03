@@ -32,6 +32,7 @@
 - [x] Task 13：补充 GUI 启动入口
 - [x] Task 14：支持新建空白考试项目
 - [x] Task 15：项目工作区、打开/保存与阅卷视图复用
+- [x] Task 16：项目工作区接入答题卡设计器
 
 ## 审查记录
 
@@ -51,6 +52,9 @@
 - Task 14 已完成验证；核心 `create_exam_project()` 生成最小合法空白项目包，CLI `new` 和 GUI 新建入口均可创建后再 inspect，全量测试 `171 passed, 1 skipped`。
 - Task 15 计划：把 `.examproj` 变成真正的项目工作区，而不是只做压缩包管理。新建或打开项目后，GUI 必须进入当前项目工作区，并显示单套识别和批量阅卷入口；保存按钮把当前工作区校验后写回 `.examproj`，另存为生成新项目包。旧项目导入继续保留为迁移辅助功能，但不是主流程。
 - Task 15 已完成验证；新增 GUI 项目会话层，支持新建并打开、打开已有项目、保存、另存为和关闭；工作区接入旧系统 single/batch 阅卷视图适配层，显式把当前项目的 layout、参考答案、输出目录和上传答案路径传给旧视图，避免继续读取旧系统全局资产。全量测试 `178 passed, 1 skipped`，浏览器烟测通过新建进入工作区、打开已有项目、保存、另存为和空白布局前置拦截。
+- Task 16 计划：在项目工作区加入答题卡设计器 tab。设计器复用旧系统 `views.designer_view.render_designer()`，但通过适配层把 `_LAYOUT_PATH`、`_SAVED_DESIGNS_DIR`、`_AUTOSAVE_PATH` 指向当前 `.examproj` 解包工作区；设计 JSON 写入项目声明的 `design` 资产，识别 layout 写入项目声明的 `layout` 资产。用户同步识别配置后，再点项目保存即可刷新 manifest checksum 并写回 `.examproj`。
+- Task 16 补充约束：答题卡设计器只新增设计入口，不替代阅卷入口。工作区必须继续保留 `阅卷` tab，且 `阅卷` tab 内必须同时保留 `单套识别` 和 `批量阅卷`；单套识别用于调试过程和课堂演示，批量阅卷用于正式批处理。
+- Task 16 已完成验证；工作区新增 `答题卡设计` tab，复用旧设计器但通过 `configure_project_designer()` 上下文管理器临时指向当前项目资产，退出时还原旧模块全局路径。`阅卷` tab 内继续保留 `单套识别` 和 `批量阅卷` 两个子 tab；空白 layout 时两个入口仍显示前置提示。全量测试 `183 passed, 1 skipped`，浏览器烟测通过设计器渲染、阅卷子 tab 保留和批量 tab 切换。
 
 ### Task 15 详细计划：项目工作区、打开/保存与阅卷视图复用
 
@@ -108,16 +112,87 @@ Worth doing：必须做。否则用户创建项目后无法继续阅卷，项目
 3. 最后处理旧全局 layout 依赖，保证阅卷真正读当前项目资产。
 4. 验证后提交 GitHub。若网络仍失败，保留本地 commit 并报告 ahead 状态。
 
+### Task 16 详细计划：项目工作区接入答题卡设计器
+
+#### 需求理解
+
+当前需求是让新建或打开的考试项目包含答题卡设计器模块。它不是一个独立模板工具，而是当前项目的一部分：用户编辑的是当前 `.examproj` 的答题卡设计资产；同步后生成当前项目的识别布局；保存项目后这些资产被打进单文件项目包。
+
+#### Linus 五层拆解
+
+1. 数据结构：设计器源数据是 `design/answer_sheet.json`，识别派生产物是 `config/sheet_layout.json`。二者都已经在 manifest 中声明，不需要再发明一套“设计器状态文件”。
+2. 特殊情况：新建空白项目当前写入的是占位 JSON，旧设计器不认识。应改成设计器原生 `AnswerSheetConfig` 格式，或者在适配层检测并升级；不要让设计器靠旧全局 autosave 恢复。
+3. 复杂度：先复用旧设计器 UI，不完整迁移 `answer_sheet_generator/` 包。本阶段只做路径适配和工作区集成。
+4. 破坏分析：不能让设计器继续写旧系统根目录的 `config/sheet_layout.json` 和 `saved_designs/`，否则当前 `.examproj` 看起来被编辑了，实际包里没变。
+5. 实用性：这是空白项目进入可阅卷状态的必要流程。没有它，Task 15 的阅卷前置检查会一直拦住新项目。
+
+#### 核心判断
+
+Worth doing：必须做。答题卡设计是 `.examproj` 的核心资产，不接入设计器，项目工作流不闭合。
+
+#### 方案选择
+
+推荐 A：适配旧设计器并嵌入当前工作区。
+
+- A：复用 `render_designer()`，调用前把旧模块的路径变量指向当前项目。成本最低，能快速闭合“新建项目 -> 设计 -> 同步 layout -> 保存 -> 阅卷”。
+- B：完整迁移 `answer_sheet_generator/` 和 `designer_view.py` 到 `exam_project`。长期正确，但会扩大本次改动范围。
+- C：重写一个简化设计器。没有必要，旧设计器已经有模板、预览、导出和 layout 同步。
+
+#### 实施步骤
+
+1. 新增设计器适配函数
+   - 在 `src/exam_project/gui/grading_adapter.py` 或新模块中增加 `configure_project_designer(project)` 上下文管理器。
+   - 导入旧 `views.designer_view`，设置：
+     - `_LAYOUT_PATH = project.layout_path`
+     - `_SAVED_DESIGNS_DIR = project.workdir / "design" / "saved_designs"`
+     - `_AUTOSAVE_PATH = project.asset_path("design")`
+   - 使用 `try/finally` 在退出时还原旧模块全局变量，避免污染后续测试或其他项目会话。
+   - 保证目录存在。
+
+2. 新建项目写入设计器原生配置
+   - 修改 `create_exam_project()`，让 `design/answer_sheet.json` 使用旧 `AnswerSheetConfig` 兼容结构：`meta`、`student_id`、`pages`。
+   - 默认配置要和当前空白 layout 保持不冲突；可以含默认选择/判断/简答，也可以只含最小选择题模板。若含题型，参考答案仍为空会导致业务校验失败，因此新项目初始仍应保持 layout 空，设计器同步后再要求参考答案匹配。
+
+3. 工作区 UI 接入
+   - `render_workspace()` 增加 tab：`答题卡设计`、`阅卷`、`项目资产`。
+   - `阅卷` tab 内继续保留 `单套识别` 和 `批量阅卷` 两个子 tab；不能为了接入设计器删掉任一视图。
+   - `答题卡设计` tab 调用旧 `designer_view.render_designer()`。
+   - 在 tab 顶部提示：同步识别配置后，需要点击左侧“保存”写回项目包。
+
+4. 保存与校验策略
+   - 用户点设计器“同步到识别配置”后，只更新工作区文件。
+   - 用户点项目“保存”时，现有 `save_project()` 统一刷新 checksum 并打包。
+   - 若 layout 同步后参考答案不匹配，保存会失败并显示校验错误。这是正确行为：不能保存一个布局和答案错配的项目。
+
+5. 测试与验证
+   - 单元测试：新建项目的 `design/answer_sheet.json` 是设计器可读结构。
+   - 单元测试：`configure_project_designer()` 把旧设计器路径指向当前项目。
+   - GUI 烟测：打开项目后出现“答题卡设计”tab，设计器能渲染；点击“同步到识别配置”会写当前项目 layout；项目保存能刷新包。
+   - 全量测试：`py -m pytest -p no:cacheprovider`。
+
+#### 风险
+
+- 旧设计器仍依赖同级 `auto_grading_system` 源码和 `answer_sheet_generator` 包。本阶段接受这个依赖，但不能扩大到写旧项目资产。
+- 设计器同步 layout 后，如果参考答案没有同步更新，项目保存会被业务校验拒绝。这不是 bug，是防止错配项目包的必要保护。
+
+#### 迁移退出条件
+
+- Task 17 规划前必须明确旧模块迁移路线，不再让“逐步迁移”裸奔。
+- Task 17 起，新功能优先落在 `exam_project` 自有模块；若继续复用同级 `auto_grading_system` 运行时模块，必须在计划中写明延期理由和退出任务编号。
+- 识别、评分、设计器、阅卷视图最终不得依赖同级目录 import 作为长期架构。
+
 ## 最终复盘
 
 - 已完成 `.examproj` foundation：manifest、checksum、安全 ZIP 打包/打开/保存、运行期项目对象、业务校验、完整打开前验证、旧系统资产导入和 CLI。
 - 已完成项目工作区基础闭环：`.examproj` 可以被新建、打开、保存、另存为和关闭；GUI 在打开后进入工作区，而不是停留在包检查工具。
 - 已接入旧系统单套识别和批量阅卷视图的适配层；当前阶段仍依赖同级 `auto_grading_system` 源码，后续应逐步把识别/评分模块迁移成 `exam_project` 自有模块。
+- 已接入答题卡设计器；设计器源数据写入当前项目的 `design` 资产，识别 layout 写入当前项目的 `layout` 资产，且旧设计器全局路径 patch 已加上下文保护。
+- `阅卷` 工作区明确保留两条路径：`单套识别` 用于调试过程和课堂演示，`批量阅卷` 用于正式批处理。
 - 旧系统真实根目录的 `config/sheet_layout.json` 与根目录 `参考答案.xlsx` 本身错配；新导入器会拒绝这种坏组合，这是正确行为，不应绕过校验。
 - 当前阶段没有迁移答题卡设计器 UI 和空白页校对工作流；这些属于后续阶段。
 
 ## 后续计划
 
-1. 迁移答题卡设计器，让空白新项目能在当前工作区内生成可阅卷布局。
+1. Task 17 先定义旧模块迁移退出条件和路径访问器整理范围。
 2. 迁移空白标定工作流，把 baseline 写入当前 `.examproj`。
-3. 逐步把旧系统识别、评分和阅卷视图从同级目录依赖迁移到 `exam_project` 自有包。
+3. 逐步把旧系统识别、评分、设计器和阅卷视图从同级目录依赖迁移到 `exam_project` 自有包，并为每项迁移写明退出任务编号。

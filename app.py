@@ -11,6 +11,7 @@ from exam_project.core.errors import ProjectError
 from exam_project.core.package import ExamProjectPackage
 from exam_project.gui.grading_adapter import (
     apply_project_layout,
+    configure_project_designer,
     default_legacy_root,
     load_baseline,
     load_model_config,
@@ -28,6 +29,7 @@ from exam_project.gui.session import (
 
 SESSION_KEY = "exam_project_session"
 FLASH_KEY = "exam_project_flash"
+DESIGNER_PROJECT_KEY = "exam_project_designer_project_id"
 
 
 def inspect_package(package_path: Path) -> dict[str, Any]:
@@ -87,6 +89,16 @@ def _load_legacy_module(name: str):
     return importlib.import_module(name)
 
 
+def _reset_designer_state_for_project(session: ProjectSession) -> None:
+    project_id = session.manifest.project_id
+    if st.session_state.get(DESIGNER_PROJECT_KEY) == project_id:
+        return
+    for key in list(st.session_state.keys()):
+        if key == "designer_config" or key.startswith("designer_"):
+            del st.session_state[key]
+    st.session_state[DESIGNER_PROJECT_KEY] = project_id
+
+
 def _layout_ready(layout: dict[str, Any]) -> tuple[bool, str]:
     missing = []
     for key in ("choice", "judge"):
@@ -96,6 +108,20 @@ def _layout_ready(layout: dict[str, Any]) -> tuple[bool, str]:
     if missing:
         return False, "当前项目布局尚未声明题型区域: " + ", ".join(missing)
     return True, ""
+
+
+def render_designer_tab(session: ProjectSession) -> None:
+    legacy_root = default_legacy_root()
+    if not legacy_root.is_dir():
+        st.error(f"找不到旧阅卷系统目录: {legacy_root}")
+        return
+    try:
+        with configure_project_designer(session.project, legacy_root) as designer:
+            _reset_designer_state_for_project(session)
+            st.info("同步识别配置后，请点击左侧“保存”写回 .examproj 项目包。")
+            designer.render_designer()
+    except Exception as exc:
+        st.error(f"答题卡设计器加载失败: {exc}")
 
 
 def render_start_page() -> None:
@@ -112,8 +138,8 @@ def render_start_page() -> None:
         new_project_name = st.text_input("项目名称", value="期末考试", key="new_name")
         student_id_digits = st.number_input(
             "学号位数",
-            min_value=1,
-            max_value=32,
+            min_value=6,
+            max_value=14,
             value=10,
             step=1,
         )
@@ -308,12 +334,16 @@ def render_single_and_batch(session: ProjectSession) -> None:
 
     layout = session.project.load_layout()
     ok, message = _layout_ready(layout)
+    single_tab, batch_tab = st.tabs(["单套识别", "批量阅卷"])
     if not ok:
-        st.warning(message)
-        st.info("请先完成答题卡设计和布局配置，再执行识别或批量阅卷。")
+        with single_tab:
+            st.warning(message)
+            st.info("单套识别用于调试过程和课堂演示。请先完成答题卡设计并同步识别配置。")
+        with batch_tab:
+            st.warning(message)
+            st.info("批量阅卷用于正式批处理。请先完成答题卡设计并同步识别配置。")
         return
 
-    single_tab, batch_tab = st.tabs(["单套识别", "批量阅卷"])
     kwargs = {
         **controls,
         "PATHS": paths,
@@ -347,7 +377,9 @@ def render_workspace(session: ProjectSession) -> None:
     st.title(session.manifest.name)
     st.caption("项目工作区")
 
-    grading_tab, assets_tab = st.tabs(["阅卷", "项目资产"])
+    designer_tab, grading_tab, assets_tab = st.tabs(["答题卡设计", "阅卷", "项目资产"])
+    with designer_tab:
+        render_designer_tab(session)
     with grading_tab:
         render_single_and_batch(session)
     with assets_tab:

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import openpyxl
 import pytest
@@ -26,6 +27,11 @@ def test_create_exam_project_creates_openable_blank_package(tmp_path: Path) -> N
     }
     layout = project.load_layout()
     assert layout["student_id"]["digit_count"] == 12
+    design = json.loads(project.asset_path("design").read_text(encoding="utf-8"))
+    assert design["meta"]["title"] == "新考试"
+    assert design["student_id"]["digit_count"] == 12
+    assert design["pages"][0]["sections"][0]["type"] == "student_id"
+    assert design["pages"][0]["sections"][1]["type"] == "choice"
 
     wb = openpyxl.load_workbook(project.answers_path, read_only=True, data_only=True)
     try:
@@ -50,7 +56,7 @@ def test_create_exam_project_does_not_replace_existing_package_when_invalid(
     assert project.manifest.name == "原项目"
 
 
-@pytest.mark.parametrize("student_id_digits", [0, -1, True, "10"])
+@pytest.mark.parametrize("student_id_digits", [0, -1, True, "10", 5, 15])
 def test_create_exam_project_rejects_invalid_student_id_digits(
     tmp_path: Path,
     student_id_digits: object,

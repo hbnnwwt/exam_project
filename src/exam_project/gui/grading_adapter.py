@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import importlib
 import json
 import sys
@@ -38,6 +39,106 @@ def _import_legacy_module(name: str, legacy_root: Path) -> ModuleType:
     if root_text not in sys.path:
         sys.path.insert(0, root_text)
     return importlib.import_module(name)
+
+
+def _default_design(project: ExamProject) -> dict[str, Any]:
+    digit_count = project.manifest.exam.get("student_id_digits", 10)
+    if type(digit_count) is not int or not (6 <= digit_count <= 14):
+        digit_count = 10
+    return {
+        "meta": {
+            "title": project.manifest.name,
+            "paper_size": "A4",
+            "numbering_mode": "continuous",
+        },
+        "student_id": {"digit_count": digit_count},
+        "pages": [
+            {
+                "sections": [
+                    {
+                        "type": "student_id",
+                        "question_start": 0,
+                        "question_count": 0,
+                        "digit_count": digit_count,
+                    },
+                    {
+                        "type": "choice",
+                        "question_start": 1,
+                        "question_count": 20,
+                        "options": ["A", "B", "C", "D"],
+                        "score": 3,
+                    },
+                ]
+            },
+            {
+                "sections": [
+                    {
+                        "type": "judge",
+                        "question_start": 21,
+                        "question_count": 10,
+                        "options": ["T", "F"],
+                        "score": 2,
+                    },
+                    {
+                        "type": "essay",
+                        "question_start": 31,
+                        "question_count": 1,
+                        "lines_per_question": 8,
+                        "score": 10,
+                    },
+                ]
+            },
+        ],
+    }
+
+
+def _configure_project_designer(
+    project: ExamProject,
+    legacy_root: Path | None = None,
+) -> ModuleType:
+    root = legacy_root or default_legacy_root()
+    designer = _import_legacy_module("views.designer_view", root)
+
+    project.asset_path("design").parent.mkdir(parents=True, exist_ok=True)
+    project.layout_path.parent.mkdir(parents=True, exist_ok=True)
+    saved_designs_dir = project.workdir / "design" / "saved_designs"
+    saved_designs_dir.mkdir(parents=True, exist_ok=True)
+
+    designer._BASE_DIR = str(project.workdir)
+    designer._LAYOUT_PATH = str(project.layout_path)
+    designer._SAVED_DESIGNS_DIR = str(saved_designs_dir)
+    designer._AUTOSAVE_PATH = str(project.asset_path("design"))
+
+    try:
+        data = json.loads(project.asset_path("design").read_text(encoding="utf-8"))
+        designer.AnswerSheetConfig.from_dict(data)
+    except Exception:
+        project.asset_path("design").write_text(
+            json.dumps(_default_design(project), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    return designer
+
+
+@contextmanager
+def configure_project_designer(
+    project: ExamProject,
+    legacy_root: Path | None = None,
+):
+    root = legacy_root or default_legacy_root()
+    designer = _import_legacy_module("views.designer_view", root)
+    backup = {
+        "_BASE_DIR": designer._BASE_DIR,
+        "_LAYOUT_PATH": designer._LAYOUT_PATH,
+        "_SAVED_DESIGNS_DIR": designer._SAVED_DESIGNS_DIR,
+        "_AUTOSAVE_PATH": designer._AUTOSAVE_PATH,
+    }
+    try:
+        yield _configure_project_designer(project, root)
+    finally:
+        for name, value in backup.items():
+            setattr(designer, name, value)
 
 
 def _fallbacks(layout: dict[str, Any], key: str, defaults: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
