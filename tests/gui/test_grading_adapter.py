@@ -2,9 +2,11 @@ from pathlib import Path
 import json
 
 from exam_project.gui.grading_adapter import (
+    configure_project_calibration,
     configure_project_designer,
     default_legacy_root,
     project_paths,
+    save_json_config,
 )
 from exam_project.gui.session import create_and_open_project
 
@@ -70,3 +72,77 @@ def test_configure_project_designer_restores_paths_after_error(
 
     assert designer._LAYOUT_PATH != patched_layout_path
     assert designer._LAYOUT_PATH != str(session.project.layout_path)
+
+
+def test_configure_project_calibration_points_paths_to_current_project(
+    tmp_path: Path,
+) -> None:
+    session = create_and_open_project(tmp_path / "sample.examproj", name="项目")
+
+    with configure_project_calibration(session.project) as calibration:
+        assert calibration._BASE_DIR == str(session.workdir)
+        assert calibration._LAYOUT_PATH == str(session.project.layout_path)
+        assert calibration._BASELINE_PATH == str(session.project.baseline_path)
+
+    assert calibration._LAYOUT_PATH != str(session.project.layout_path)
+    assert calibration._BASELINE_PATH != str(session.project.baseline_path)
+
+
+def test_configure_project_calibration_restores_paths_after_error(
+    tmp_path: Path,
+) -> None:
+    session = create_and_open_project(tmp_path / "sample.examproj", name="项目")
+
+    try:
+        with configure_project_calibration(session.project) as calibration:
+            patched_baseline_path = calibration._BASELINE_PATH
+            raise RuntimeError("simulated render failure")
+    except RuntimeError:
+        pass
+
+    assert calibration._BASELINE_PATH != patched_baseline_path
+    assert calibration._BASELINE_PATH != str(session.project.baseline_path)
+
+
+def test_save_json_config_writes_project_config_path(tmp_path: Path) -> None:
+    session = create_and_open_project(tmp_path / "sample.examproj", name="项目")
+    paths = project_paths(session.project)
+
+    saved = save_json_config(
+        paths["api_keys"],
+        {
+            "api_key": "primary",
+            "api_keys": ["fallback"],
+            "ocr_api_key": "ocr",
+        },
+    )
+
+    assert saved["api_key"] == "primary"
+    assert json.loads(Path(paths["api_keys"]).read_text(encoding="utf-8")) == saved
+    assert Path(paths["api_keys"]).is_relative_to(session.workdir)
+
+
+def test_save_json_config_can_clear_existing_keys(tmp_path: Path) -> None:
+    session = create_and_open_project(tmp_path / "sample.examproj", name="项目")
+    paths = project_paths(session.project)
+
+    save_json_config(
+        paths["api_keys"],
+        {
+            "api_key": "primary",
+            "api_keys": ["fallback"],
+            "ocr_api_key": "ocr",
+        },
+    )
+    saved = save_json_config(
+        paths["api_keys"],
+        {
+            "api_key": "",
+            "api_keys": [],
+            "ocr_api_key": "",
+        },
+    )
+
+    assert saved["api_key"] == ""
+    assert saved["api_keys"] == []
+    assert saved["ocr_api_key"] == ""

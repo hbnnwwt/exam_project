@@ -33,6 +33,7 @@
 - [x] Task 14：支持新建空白考试项目
 - [x] Task 15：项目工作区、打开/保存与阅卷视图复用
 - [x] Task 16：项目工作区接入答题卡设计器
+- [x] Task 17：恢复在线 OCR 配置并接入空白试卷校对
 
 ## 审查记录
 
@@ -55,6 +56,8 @@
 - Task 16 计划：在项目工作区加入答题卡设计器 tab。设计器复用旧系统 `views.designer_view.render_designer()`，但通过适配层把 `_LAYOUT_PATH`、`_SAVED_DESIGNS_DIR`、`_AUTOSAVE_PATH` 指向当前 `.examproj` 解包工作区；设计 JSON 写入项目声明的 `design` 资产，识别 layout 写入项目声明的 `layout` 资产。用户同步识别配置后，再点项目保存即可刷新 manifest checksum 并写回 `.examproj`。
 - Task 16 补充约束：答题卡设计器只新增设计入口，不替代阅卷入口。工作区必须继续保留 `阅卷` tab，且 `阅卷` tab 内必须同时保留 `单套识别` 和 `批量阅卷`；单套识别用于调试过程和课堂演示，批量阅卷用于正式批处理。
 - Task 16 已完成验证；工作区新增 `答题卡设计` tab，复用旧设计器但通过 `configure_project_designer()` 上下文管理器临时指向当前项目资产，退出时还原旧模块全局路径。`阅卷` tab 内继续保留 `单套识别` 和 `批量阅卷` 两个子 tab；空白 layout 时两个入口仍显示前置提示。全量测试 `183 passed, 1 skipped`，浏览器烟测通过设计器渲染、阅卷子 tab 保留和批量 tab 切换。
+- Task 17 计划：恢复项目级 online OCR / LLM 配置入口，并接入空白试卷校对模块。配置写入当前项目的 `config/api_keys.json` 与 `config/model_config.json`，不再写旧系统根目录；空白校对复用旧系统 `views.calibration_view.render_calibration()`，但用上下文管理器把 `_LAYOUT_PATH` 和 `_BASELINE_PATH` 指向当前项目的 layout 与 baseline 资产。保存项目时现有 checksum 刷新会把 baseline 打进 `.examproj`。
+- Task 17 已完成验证；侧边栏恢复 `ModelScope API Key`、备用 Key、OCR 专用 Key、在线 OCR 模型、Base URL、LLM 模型和保存按钮，写入当前项目 `config/api_keys.json` 与 `config/model_config.json`。工作区新增 `空白校对` tab，复用旧空白校对 view 但通过 `configure_project_calibration()` 指向当前项目 layout、baseline 和 workdir。全量测试 `188 passed, 1 skipped`，浏览器烟测通过新建项目、online OCR 字段显示、空白校对渲染、`单套识别`/`批量阅卷` 保留。
 
 ### Task 15 详细计划：项目工作区、打开/保存与阅卷视图复用
 
@@ -181,18 +184,73 @@ Worth doing：必须做。答题卡设计是 `.examproj` 的核心资产，不�
 - Task 17 起，新功能优先落在 `exam_project` 自有模块；若继续复用同级 `auto_grading_system` 运行时模块，必须在计划中写明延期理由和退出任务编号。
 - 识别、评分、设计器、阅卷视图最终不得依赖同级目录 import 作为长期架构。
 
+### Task 17 详细计划：恢复在线 OCR 配置并接入空白试卷校对
+
+#### 需求理解
+
+当前 GUI 把旧系统的 online OCR 配置入口删薄了，只剩 OCR 引擎选择。这会直接破坏在线 OCR 使用路径：用户无法填写 ModelScope API Key、OCR 专用 Key、在线 OCR 模型，也无法保存 Base URL 和模型配置。另一个缺口是空白试卷校对/标定模块还没有进入项目工作区，导致当前 `.examproj` 无法生成 `config/blank_baseline.json`。
+
+#### Linus 五层拆解
+
+1. 数据结构：API Key 是项目级配置，落在 `config/api_keys.json`；模型配置落在 `config/model_config.json`；空白基准落在 manifest optional asset `config/blank_baseline.json`。
+2. 特殊情况：online OCR 与 LLM 评分可以共用主 Key，也可以使用 OCR 专用 Key。不要把它硬编码成一个 Key，否则用户无法处理限流和权限拆分。
+3. 复杂度：恢复旧侧边栏配置块，不重写 OCR/LLM 模块；空白校对复用旧 view，但路径 patch 必须用上下文管理器。
+4. 破坏分析：不能写旧系统根目录的 `config/api_keys.json`、`config/model_config.json` 或 `config/blank_baseline.json`。所有写入必须发生在当前项目 workdir。
+5. 实用性：online OCR 配置是简答题 OCR 的必要入口；空白校对是生成 baseline、提升填涂识别稳定性的必要工作流。
+
+#### 核心判断
+
+Worth doing：必须做。否则项目工作区缺少在线 OCR 配置入口，也缺少空白基准生成路径。
+
+#### 实施步骤
+
+1. 恢复项目级 API/OCR/LLM 配置 UI
+   - 在 `render_grading_controls()` 中恢复旧系统的：
+     - `ModelScope API Key`
+     - 备用 API Key 列表
+     - `在线 OCR 使用同一个 Key`
+     - `OCR 专用 API Key`
+     - `在线 OCR 模型`
+     - `Base URL`
+     - LLM 模型和备用模型
+     - 保存 API Key / 保存模型配置按钮
+   - 使用当前项目的 `paths["api_keys"]` 和 `paths["model_config"]`。
+   - 返回给 single/batch 的 `ocr_api_config` 必须包含在线 OCR 所需 `api_key`、`base_url`、`ocr_model`、`ocr_max_tokens`、`ocr_prompt`。
+
+2. 接入空白试卷校对 tab
+   - 工作区 tab 调整为：`答题卡设计`、`空白校对`、`阅卷`、`项目资产`。
+   - 新增 `configure_project_calibration(project)` 上下文管理器。
+   - 调用旧 `views.calibration_view.render_calibration()` 前，设置：
+     - `_LAYOUT_PATH = project.layout_path`
+     - `_BASELINE_PATH = project.baseline_path`
+     - `_BASE_DIR = project.workdir`
+   - 进入校对前调用 `apply_project_layout(project)`，保证旧 `LayoutAnalyzer` 读取当前 layout。
+
+3. 保存策略
+   - 空白校对点击“保存空白基准”后只写工作区 baseline。
+   - 用户点击项目“保存”时，现有 `save_project()` 刷新 checksum 并打包 `.examproj`。
+   - 如果 baseline 文件存在，checksum 应包含 `config/blank_baseline.json`。
+
+4. 测试与验证
+   - 单元测试：保存 API/model 配置使用项目路径，不能写旧根目录。
+   - 单元测试：calibration context 退出后还原旧模块全局路径。
+   - 单元测试：baseline 文件存在时保存项目后 manifest checksums 包含 baseline。
+   - GUI 烟测：侧边栏出现 online OCR 配置；工作区出现 `空白校对` tab；阅卷 tab 仍保留 `单套识别` 和 `批量阅卷`。
+   - 全量测试：`py -m pytest -p no:cacheprovider`。
+
 ## 最终复盘
 
 - 已完成 `.examproj` foundation：manifest、checksum、安全 ZIP 打包/打开/保存、运行期项目对象、业务校验、完整打开前验证、旧系统资产导入和 CLI。
 - 已完成项目工作区基础闭环：`.examproj` 可以被新建、打开、保存、另存为和关闭；GUI 在打开后进入工作区，而不是停留在包检查工具。
 - 已接入旧系统单套识别和批量阅卷视图的适配层；当前阶段仍依赖同级 `auto_grading_system` 源码，后续应逐步把识别/评分模块迁移成 `exam_project` 自有模块。
 - 已接入答题卡设计器；设计器源数据写入当前项目的 `design` 资产，识别 layout 写入当前项目的 `layout` 资产，且旧设计器全局路径 patch 已加上下文保护。
+- 已恢复项目级 online OCR / LLM 配置；配置写入当前 `.examproj` 工作区的 `config/api_keys.json` 与 `config/model_config.json`，不会污染旧系统根目录。
+- 已接入空白校对模块；空白基准写入当前项目的 `config/blank_baseline.json`，项目保存时刷新 checksum 并打包进 `.examproj`。
 - `阅卷` 工作区明确保留两条路径：`单套识别` 用于调试过程和课堂演示，`批量阅卷` 用于正式批处理。
 - 旧系统真实根目录的 `config/sheet_layout.json` 与根目录 `参考答案.xlsx` 本身错配；新导入器会拒绝这种坏组合，这是正确行为，不应绕过校验。
-- 当前阶段没有迁移答题卡设计器 UI 和空白页校对工作流；这些属于后续阶段。
+- 当前阶段仍在复用旧系统 Streamlit 视图；后续重点不是再补入口，而是把旧识别、评分、设计器、空白校对和阅卷视图逐步迁移到 `exam_project` 自有模块。
 
 ## 后续计划
 
-1. Task 17 先定义旧模块迁移退出条件和路径访问器整理范围。
-2. 迁移空白标定工作流，把 baseline 写入当前 `.examproj`。
-3. 逐步把旧系统识别、评分、设计器和阅卷视图从同级目录依赖迁移到 `exam_project` 自有包，并为每项迁移写明退出任务编号。
+1. Task 18 定义旧模块迁移退出条件和路径访问器整理范围。
+2. 逐步把旧系统识别、评分、设计器、空白校对和阅卷视图从同级目录依赖迁移到 `exam_project` 自有包，并为每项迁移写明退出任务编号。

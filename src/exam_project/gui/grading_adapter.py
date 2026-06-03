@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import contextmanager
 import importlib
 import json
@@ -209,6 +210,30 @@ def load_baseline(project: ExamProject, legacy_root: Path | None = None) -> dict
     }
 
 
+@contextmanager
+def configure_project_calibration(
+    project: ExamProject,
+    legacy_root: Path | None = None,
+):
+    root = legacy_root or default_legacy_root()
+    calibration = _import_legacy_module("views.calibration_view", root)
+    backup = {
+        "_BASE_DIR": calibration._BASE_DIR,
+        "_LAYOUT_PATH": calibration._LAYOUT_PATH,
+        "_BASELINE_PATH": calibration._BASELINE_PATH,
+    }
+    try:
+        project.layout_path.parent.mkdir(parents=True, exist_ok=True)
+        project.baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        calibration._BASE_DIR = str(project.workdir)
+        calibration._LAYOUT_PATH = str(project.layout_path)
+        calibration._BASELINE_PATH = str(project.baseline_path)
+        yield calibration
+    finally:
+        for name, value in backup.items():
+            setattr(calibration, name, value)
+
+
 def load_model_config(path: str) -> dict[str, Any]:
     config_path = Path(path)
     if not config_path.is_file():
@@ -218,3 +243,15 @@ def load_model_config(path: str) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def save_json_config(path: str | Path, updates: Mapping[str, Any]) -> dict[str, Any]:
+    config_path = Path(path)
+    existing = load_model_config(str(config_path))
+    existing.update(dict(updates))
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(existing, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return existing

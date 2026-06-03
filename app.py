@@ -11,11 +11,13 @@ from exam_project.core.errors import ProjectError
 from exam_project.core.package import ExamProjectPackage
 from exam_project.gui.grading_adapter import (
     apply_project_layout,
+    configure_project_calibration,
     configure_project_designer,
     default_legacy_root,
     load_baseline,
     load_model_config,
     project_paths,
+    save_json_config,
 )
 from exam_project.gui.session import (
     ProjectSession,
@@ -122,6 +124,20 @@ def render_designer_tab(session: ProjectSession) -> None:
             designer.render_designer()
     except Exception as exc:
         st.error(f"答题卡设计器加载失败: {exc}")
+
+
+def render_calibration_tab(session: ProjectSession) -> None:
+    legacy_root = default_legacy_root()
+    if not legacy_root.is_dir():
+        st.error(f"找不到旧阅卷系统目录: {legacy_root}")
+        return
+    try:
+        apply_project_layout(session.project, legacy_root)
+        with configure_project_calibration(session.project, legacy_root) as calibration:
+            st.info("保存空白基准后，请点击左侧“保存”写回 .examproj 项目包。")
+            calibration.render_calibration()
+    except Exception as exc:
+        st.error(f"空白校对模块加载失败: {exc}")
 
 
 def render_start_page() -> None:
@@ -253,42 +269,158 @@ def render_grading_controls(paths: dict[str, str]) -> dict[str, Any]:
             help="黑色像素占比超过此值则判定为已填涂",
         )
 
+        st.divider()
+        st.header("API Key 配置")
+        api_keys_path = paths["api_keys"]
+        model_config_path = paths["model_config"]
         model_cfg = load_model_config(paths["model_config"])
         api_cfg = load_model_config(paths["api_keys"])
+        saved_api_key = api_cfg.get("api_key", "")
+        saved_ocr_key = api_cfg.get("ocr_api_key", "")
+
+        api_key_input = st.text_input(
+            "ModelScope API Key",
+            value=saved_api_key,
+            type="password",
+            help="用于 LLM 评分和在线 OCR",
+            key="project_api_key",
+        )
+        with st.expander("备用 API Key（可选）"):
+            fallback_api_keys_input = st.text_area(
+                "备用 Key 列表（用 ; 或 ； 分隔，限流时自动轮询）",
+                value="; ".join(api_cfg.get("api_keys", [])),
+                key="project_fallback_api_keys",
+                height=80,
+            )
+        use_same_ocr_key = st.checkbox(
+            "在线 OCR 使用同一个 Key",
+            value=not str(saved_ocr_key).strip() or saved_ocr_key == saved_api_key,
+            key="project_use_same_ocr_key",
+        )
+        if use_same_ocr_key:
+            ocr_key_input = api_key_input
+        else:
+            ocr_key_input = st.text_input(
+                "OCR 专用 API Key",
+                value=saved_ocr_key,
+                type="password",
+                key="project_ocr_api_key",
+            )
+        if st.button("保存 API Key", type="primary", key="project_save_api_key"):
+            fallback_keys = _split_semicolon(fallback_api_keys_input)
+            save_json_config(
+                api_keys_path,
+                {
+                    "api_key": api_key_input,
+                    "api_keys": fallback_keys,
+                    "ocr_api_key": "" if use_same_ocr_key else ocr_key_input,
+                },
+            )
+            st.success("API Key 配置已保存到当前项目")
+
+        api_cfg = load_model_config(api_keys_path)
+        model_cfg = load_model_config(model_config_path)
         api_key = api_cfg.get("api_key", "")
         api_key = _merge_primary_and_fallback(api_key, api_cfg.get("api_keys", []))
         ocr_key = api_cfg.get("ocr_api_key", "") or api_key
 
+        st.divider()
+        st.header("OCR 引擎")
         available = [
             (engine, f"{engine} {'✓' if essay_recognizer.check_engine_available(engine) else '✗ 未安装'}")
             for engine in essay_recognizer.SUPPORTED_ENGINES
         ]
         labels = [label for _, label in available]
         values = [engine for engine, _ in available]
+        default_engine = model_cfg.get("ocr_engine", values[0] if values else "paddleocr")
+        default_engine_index = values.index(default_engine) if default_engine in values else 0
         selected = st.selectbox(
             "简答题 OCR 引擎",
             range(len(labels)),
             format_func=lambda index: labels[index],
-            index=0,
+            index=default_engine_index,
+            key="project_ocr_engine",
         )
         ocr_engine = values[selected]
+        online_ocr_model = model_cfg.get("ocr_model", defaults.DEFAULT_OCR_MODEL)
+        if ocr_engine == "online":
+            online_ocr_model = st.text_input(
+                "在线 OCR 模型",
+                value=online_ocr_model,
+                help="视觉模型 ID，需支持 image_url 输入",
+                key="project_online_ocr_model",
+            )
+            has_ocr_key = bool(ocr_key.strip() if isinstance(ocr_key, str) else ocr_key)
+            if not has_ocr_key:
+                st.warning("在线 OCR 需要配置 API Key")
         if ocr_engine != "online" and not essay_recognizer.check_engine_available(ocr_engine):
             st.warning(f"`{ocr_engine}` 未安装，将回退到 paddleocr")
             ocr_engine = "paddleocr"
 
+        st.divider()
+        st.header("模型配置")
+        primary_base_url = model_cfg.get("base_url", defaults.DEFAULT_BASE_URL)
+        base_url_input = st.text_input(
+            "Base URL",
+            value=primary_base_url,
+            help="在线 OCR 和 LLM 评分使用的 API 端点",
+            key="project_base_url",
+        )
+        with st.expander("备用 Base URL（可选）"):
+            fallback_base_urls_input = st.text_area(
+                "备用 Base URL 列表（用 ; 或 ； 分隔）",
+                value="; ".join(model_cfg.get("fallback_base_urls", [])),
+                key="project_fallback_base_urls",
+                height=80,
+            )
+
+        primary_model = model_cfg.get("llm_model", defaults.DEFAULT_LLM_MODEL)
+        if isinstance(primary_model, list):
+            primary_model = primary_model[0] if primary_model else defaults.DEFAULT_LLM_MODEL
+        llm_model_input = st.text_input(
+            "LLM 模型",
+            value=primary_model,
+            help="用于简答题评分的模型 ID",
+            key="project_llm_model",
+        )
+        with st.expander("备用 LLM 模型（可选）"):
+            fallback_models_input = st.text_area(
+                "备用模型列表（用 ; 或 ； 分隔，限流时自动降级）",
+                value="; ".join(model_cfg.get("llm_models", [])),
+                key="project_fallback_llm_models",
+                height=80,
+            )
+
+        fallback_base_urls = _split_semicolon(fallback_base_urls_input)
+        fallback_models = _split_semicolon(fallback_models_input)
+        llm_base_url = _merge_primary_and_fallback(base_url_input, fallback_base_urls)
+        llm_model = _merge_primary_and_fallback(llm_model_input, fallback_models)
+        if st.button("保存模型配置", key="project_save_model_config"):
+            save_json_config(
+                model_config_path,
+                {
+                    "base_url": base_url_input,
+                    "fallback_base_urls": fallback_base_urls,
+                    "llm_model": llm_model_input,
+                    "llm_models": fallback_models,
+                    "ocr_engine": ocr_engine,
+                    "ocr_model": online_ocr_model,
+                    "ocr_max_tokens": model_cfg.get("ocr_max_tokens", 1024),
+                    "ocr_prompt": model_cfg.get(
+                        "ocr_prompt",
+                        "请逐行识别图片中的所有文字内容，只输出文字，不要添加解释。",
+                    ),
+                },
+            )
+            st.success("模型配置已保存到当前项目")
+
+        st.divider()
+        st.header("LLM 评分设置")
         llm_enabled = st.checkbox(
             "启用 LLM 简答题评分",
             value=bool(api_key.strip() if isinstance(api_key, str) else api_key),
+            key="project_llm_enabled",
         )
-        llm_base_url = _merge_primary_and_fallback(
-            model_cfg.get("base_url", defaults.DEFAULT_BASE_URL),
-            model_cfg.get("fallback_base_urls", []),
-        )
-        llm_model = _merge_primary_and_fallback(
-            model_cfg.get("llm_model", defaults.DEFAULT_LLM_MODEL),
-            model_cfg.get("llm_models", []),
-        )
-        online_ocr_model = model_cfg.get("ocr_model", defaults.DEFAULT_OCR_MODEL)
 
         if llm_enabled and not bool(api_key.strip() if isinstance(api_key, str) else api_key):
             st.warning("未配置 API Key，LLM 评分不会生效")
@@ -377,9 +509,13 @@ def render_workspace(session: ProjectSession) -> None:
     st.title(session.manifest.name)
     st.caption("项目工作区")
 
-    designer_tab, grading_tab, assets_tab = st.tabs(["答题卡设计", "阅卷", "项目资产"])
+    designer_tab, calibration_tab, grading_tab, assets_tab = st.tabs(
+        ["答题卡设计", "空白校对", "阅卷", "项目资产"]
+    )
     with designer_tab:
         render_designer_tab(session)
+    with calibration_tab:
+        render_calibration_tab(session)
     with grading_tab:
         render_single_and_batch(session)
     with assets_tab:

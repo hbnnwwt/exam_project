@@ -80,17 +80,22 @@ The GUI is a thin Streamlit front end for the current foundation features:
 - import old project assets into `.examproj`
 - inspect an existing `.examproj` manifest
 - design an answer sheet inside the current project workspace
+- edit project-level API Key, online OCR, and LLM model settings
+- calibrate a blank answer sheet inside the current project workspace
 - enter a grading workspace with both single-sheet and batch grading tabs
 
 The current designer and grading tabs reuse the old `auto_grading_system`
 Streamlit views through project adapters. They read and write the open
 project's design, layout, reference-answer, and output assets instead of the old
 global `config/sheet_layout.json`, `saved_designs`, and `参考答案.xlsx`.
+The online OCR and LLM settings are stored in the open project's
+`config/api_keys.json` and `config/model_config.json`; they are not written back
+to the old system root. Blank calibration writes `config/blank_baseline.json` in
+the current project workspace. Click the project `保存` button to refresh
+manifest checksums and package those changes into the `.examproj` file.
 
 The single-sheet view is kept for process debugging and classroom
 demonstration. The batch view is kept for batch grading.
-
-Blank calibration is not migrated yet.
 
 ## Package Contract
 

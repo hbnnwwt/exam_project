@@ -120,6 +120,21 @@ def test_save_project_as_switches_package_path(tmp_path: Path) -> None:
     assert ExamProjectPackage.open(target, tmp_path / "opened").manifest.name == "原项目"
 
 
+def test_save_project_includes_baseline_checksum_when_present(tmp_path: Path) -> None:
+    package_path = tmp_path / "sample.examproj"
+    session = create_and_open_project(package_path, name="原项目")
+    session.project.baseline_path.write_text(
+        json.dumps({"choice": {"questions": {}}, "judge": {"questions": {}}}),
+        encoding="utf-8",
+    )
+
+    save_project(session)
+    reopened = ExamProjectPackage.open(package_path, tmp_path / "opened")
+
+    assert "config/blank_baseline.json" in reopened.manifest.checksums
+    assert reopened.baseline_path.is_file()
+
+
 def test_bad_open_does_not_replace_existing_session_workspace(tmp_path: Path) -> None:
     package_path = tmp_path / "sample.examproj"
     session = create_and_open_project(package_path, name="原项目")
