@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .exam_project_workspace/
+python_portable/
+python-*-embed-amd64.zip
 *.examproj
 *.examproj.bak
 *.examproj.tmp

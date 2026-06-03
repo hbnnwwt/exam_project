@@ -22,7 +22,7 @@ if exist "python_portable\python.exe" (
             set "PYTHON_CMD=python"
         ) else (
             echo [Error] Python not found.
-            echo   Please install Python 3.11+.
+            echo   Please run setup.bat first, or install Python 3.8+.
             echo.
             pause
             exit /b 1
@@ -33,16 +33,12 @@ if exist "python_portable\python.exe" (
 echo [Using] !PYTHON_CMD!
 echo.
 
-if defined PYTHONPATH (
-    set "PYTHONPATH=%CD%\src;%PYTHONPATH%"
-) else (
-    set "PYTHONPATH=%CD%\src"
-)
+set "PYTHONPATH=%CD%\src;%PYTHONPATH%"
 
 "!PYTHON_CMD!" -X utf8 -m streamlit --version >nul 2>&1
 if !errorlevel! neq 0 (
     echo [Error] Streamlit not found.
-    echo   Run: !PYTHON_CMD! -m pip install -e .[gui]
+    echo   Run setup.bat first to install dependencies.
     echo.
     pause
     exit /b 1
@@ -89,7 +85,7 @@ echo.
 if !errorlevel! neq 0 (
     echo.
     echo [Error] Failed to start Streamlit.
-    echo   Try: !PYTHON_CMD! -m pip install -e .[gui]
+    echo   Run setup.bat first to install dependencies.
     echo.
 )
 

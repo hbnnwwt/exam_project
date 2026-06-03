@@ -12,18 +12,21 @@ An exam project can contain:
 
 This foundation milestone provides the core package format, manifest validation, checksum validation, safe ZIP packaging, project runtime objects, business validation, legacy asset import, and a small CLI.
 
+## Windows Quick Start
+
+Double-click `setup.bat`. It will:
+
+1. Download a portable Python 3.12 into `python_portable\` (skip if already present).
+2. Bootstrap pip and install everything in `requirements.txt` via the Tsinghua mirror.
+
+After setup completes, double-click `run_gui.bat` to launch the Streamlit GUI.
+
 ## Development
 
-Install in editable mode:
+If you prefer to use an existing system Python (3.11+):
 
-```bash
-python -m pip install -e .[dev]
-```
-
-Install the GUI extra if you want to use `run_gui.bat`:
-
-```bash
-python -m pip install -e .[gui]
+```powershell
+py -m pip install -r requirements.txt
 ```
 
 Run tests:
