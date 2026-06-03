@@ -7,7 +7,18 @@ from pathlib import Path
 
 from exam_project.core.errors import ProjectError
 from exam_project.core.legacy_import import import_legacy_project
+from exam_project.core.new_project import create_exam_project
 from exam_project.core.package import ExamProjectPackage
+
+
+def _cmd_new(args: argparse.Namespace) -> int:
+    create_exam_project(
+        Path(args.output),
+        name=args.name,
+        student_id_digits=args.student_id_digits,
+    )
+    print(f"已创建考试项目: {args.output}")
+    return 0
 
 
 def _cmd_import_legacy(args: argparse.Namespace) -> int:
@@ -26,6 +37,12 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="exam-project", description="考试项目包工具")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    new_parser = sub.add_parser("new", help="创建新的空白 .examproj")
+    new_parser.add_argument("output")
+    new_parser.add_argument("--name", required=True)
+    new_parser.add_argument("--student-id-digits", type=int, default=10)
+    new_parser.set_defaults(func=_cmd_new)
 
     import_parser = sub.add_parser("import-legacy", help="从旧系统资产创建 .examproj")
     import_parser.add_argument("legacy_root")

@@ -40,6 +40,12 @@ py -m pytest
 
 ## CLI
 
+Create a new blank project package:
+
+```bash
+python -m exam_project.cli new demo.examproj --name "Final Exam"
+```
+
 Import assets from the old project layout:
 
 ```bash
@@ -68,6 +74,7 @@ run_gui.bat
 
 The GUI is a thin Streamlit front end for the current foundation features:
 
+- create a new blank `.examproj`
 - import old project assets into `.examproj`
 - inspect an existing `.examproj` manifest
 

@@ -30,6 +30,7 @@
 - [x] Task 11：README 更新
 - [x] Task 12：最终验证
 - [x] Task 13：补充 GUI 启动入口
+- [x] Task 14：支持新建空白考试项目
 
 ## 审查记录
 
@@ -45,6 +46,8 @@
 - Task 12 已完成最终验证；全量测试 `163 passed, 1 skipped`，手工 CLI import/inspect 烟测通过，GitHub 分支已按里程碑推送。
 - Task 13 计划：补一个 Streamlit 薄 GUI，只暴露旧项目导入和项目包检查；新增 `run_gui.bat` 复用旧系统的 Python 检测和端口切换逻辑；README 说明 CLI 与 GUI 两种运行方式。
 - Task 13 已完成验证；`run_gui.bat` 可启动 Streamlit GUI，浏览器实测导入旧项目夹具并检查 manifest 通过，全量测试仍为 `163 passed, 1 skipped`。
+- Task 14 计划：新增空白考试项目创建能力，把 GUI 主入口调整为“新建项目”，旧项目导入保留为迁移辅助功能；CLI 增加 `new` 命令并补测试。
+- Task 14 已完成验证；核心 `create_exam_project()` 生成最小合法空白项目包，CLI `new` 和 GUI 新建入口均可创建后再 inspect，全量测试 `171 passed, 1 skipped`。
 
 ## 最终复盘
 

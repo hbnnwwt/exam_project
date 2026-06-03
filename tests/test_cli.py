@@ -93,6 +93,33 @@ def test_cli_import_legacy_and_inspect(tmp_path: Path) -> None:
     assert not list(temp_root.glob(".exam_project_inspect_*.old-*"))
 
 
+def test_cli_new_and_inspect(tmp_path: Path) -> None:
+    package_path = tmp_path / "new.examproj"
+
+    new_result = run_cli(
+        "new",
+        str(package_path),
+        "--name",
+        "新建项目",
+        "--student-id-digits",
+        "12",
+    )
+    assert new_result.returncode == 0
+    assert package_path.exists()
+
+    inspect_result = run_cli("inspect", str(package_path))
+
+    assert inspect_result.returncode == 0
+    manifest = json.loads(inspect_result.stdout)
+    assert manifest["name"] == "新建项目"
+    assert manifest["exam"]["student_id_digits"] == 12
+    assert set(manifest["checksums"]) == {
+        "design/answer_sheet.json",
+        "config/sheet_layout.json",
+        "answers/reference_answers.xlsx",
+    }
+
+
 def test_cli_inspect_reports_project_errors_without_traceback(tmp_path: Path) -> None:
     package_path = tmp_path / "missing.examproj"
 
@@ -119,6 +146,23 @@ def test_cli_import_legacy_reports_missing_assets_without_traceback(
 
     assert result.returncode == 2
     assert "缺少旧版布局文件" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_cli_new_reports_invalid_student_id_digits_without_traceback(
+    tmp_path: Path,
+) -> None:
+    result = run_cli(
+        "new",
+        str(tmp_path / "new.examproj"),
+        "--name",
+        "坏项目",
+        "--student-id-digits",
+        "0",
+    )
+
+    assert result.returncode == 2
+    assert "学号位数必须大于 0" in result.stderr
     assert "Traceback" not in result.stderr
 
 
