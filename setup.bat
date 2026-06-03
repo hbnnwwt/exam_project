@@ -74,6 +74,7 @@ echo.
 set "PYTHONPATH=%~dp0src"
 
 "%PYTHON_EXE%" -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn >nul 2>&1
+"%PYTHON_EXE%" -m pip install setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn >nul 2>&1
 "%PYTHON_EXE%" -m pip install -r "%~dp0requirements.txt" -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 if !errorlevel! neq 0 (
     echo [Error] Failed to install dependencies.
@@ -81,10 +82,13 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-echo [Install] exam_project package (editable) ...
-"%PYTHON_EXE%" -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn >nul 2>&1
+echo [Install] exam_project package (editable, no build isolation) ...
+"%PYTHON_EXE%" -m pip install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 if !errorlevel! neq 0 (
+    echo.
     echo [Error] Failed to install exam_project package.
+    echo   Try running the same command manually to see the real error:
+    echo     "%PYTHON_EXE%" -m pip install -e . --no-build-isolation
     pause
     exit /b 1
 )

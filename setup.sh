@@ -51,16 +51,20 @@ echo
 export PYTHONPATH="$(pwd)/src:${PYTHONPATH}"
 
 "$PYTHON_CMD" -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn 2>/dev/null
+"$PYTHON_CMD" -m pip install setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn 2>/dev/null
 "$PYTHON_CMD" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 if [ $? -ne 0 ]; then
     echo "[Error] Failed to install dependencies."
     exit 1
 fi
 
-echo "[Install] exam_project package (editable) ..."
-"$PYTHON_CMD" -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn 2>/dev/null
+echo "[Install] exam_project package (editable, no build isolation) ..."
+"$PYTHON_CMD" -m pip install -e . --no-build-isolation -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 if [ $? -ne 0 ]; then
+    echo
     echo "[Error] Failed to install exam_project package."
+    echo "  Try running the same command manually to see the real error:"
+    echo "    $PYTHON_CMD -m pip install -e . --no-build-isolation"
     exit 1
 fi
 
