@@ -59,9 +59,29 @@ def test_asset_path_resolves_declared_asset_under_workdir(tmp_path: Path) -> Non
 def test_common_asset_path_properties(tmp_path: Path) -> None:
     project = make_project(tmp_path)
 
+    assert project.design_path == project.workdir / "design" / "answer_sheet.json"
     assert project.layout_path == project.workdir / "config" / "sheet_layout.json"
     assert project.answers_path == project.workdir / "answers" / "reference_answers.xlsx"
     assert project.baseline_path == project.workdir / "config" / "blank_baseline.json"
+
+
+def test_runtime_path_properties_are_centralized(tmp_path: Path) -> None:
+    project = make_project(tmp_path)
+
+    assert project.config_dir == project.workdir / "config"
+    assert project.data_dir == project.workdir / "data"
+    assert project.output_dir == project.workdir / "data" / "output"
+    assert project.processed_dir == project.workdir / "data" / "processed"
+    assert project.answer_sheets_dir == project.workdir / "data" / "answer_sheets"
+    assert project.saved_designs_dir == project.workdir / "design" / "saved_designs"
+    assert project.api_keys_path == project.workdir / "config" / "api_keys.json"
+    assert project.model_config_path == project.workdir / "config" / "model_config.json"
+    assert project.batch_checkpoint_path == (
+        project.workdir / "data" / "output" / "_batch_checkpoint.json"
+    )
+    assert project.uploaded_answer_key_path == (
+        project.workdir / "answers" / "_uploaded_answer_key.xlsx"
+    )
 
 
 def test_load_layout_reads_layout_json_as_dict(tmp_path: Path) -> None:

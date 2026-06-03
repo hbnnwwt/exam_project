@@ -21,6 +21,10 @@ class ExamProject:
         return self.workdir / rel
 
     @property
+    def design_path(self) -> Path:
+        return self.asset_path("design")
+
+    @property
     def layout_path(self) -> Path:
         return self.asset_path("layout")
 
@@ -31,6 +35,46 @@ class ExamProject:
     @property
     def baseline_path(self) -> Path:
         return self.asset_path("baseline")
+
+    @property
+    def config_dir(self) -> Path:
+        return self.workdir / "config"
+
+    @property
+    def data_dir(self) -> Path:
+        return self.workdir / "data"
+
+    @property
+    def output_dir(self) -> Path:
+        return self.data_dir / "output"
+
+    @property
+    def processed_dir(self) -> Path:
+        return self.data_dir / "processed"
+
+    @property
+    def answer_sheets_dir(self) -> Path:
+        return self.data_dir / "answer_sheets"
+
+    @property
+    def saved_designs_dir(self) -> Path:
+        return self.design_path.parent / "saved_designs"
+
+    @property
+    def api_keys_path(self) -> Path:
+        return self.config_dir / "api_keys.json"
+
+    @property
+    def model_config_path(self) -> Path:
+        return self.config_dir / "model_config.json"
+
+    @property
+    def batch_checkpoint_path(self) -> Path:
+        return self.output_dir / "_batch_checkpoint.json"
+
+    @property
+    def uploaded_answer_key_path(self) -> Path:
+        return self.answers_path.parent / "_uploaded_answer_key.xlsx"
 
     def load_layout(self) -> dict:
         return json.loads(self.layout_path.read_text(encoding="utf-8"))

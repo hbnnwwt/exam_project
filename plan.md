@@ -34,6 +34,7 @@
 - [x] Task 15：项目工作区、打开/保存与阅卷视图复用
 - [x] Task 16：项目工作区接入答题卡设计器
 - [x] Task 17：恢复在线 OCR 配置并接入空白试卷校对
+- [x] Task 18：收口项目路径访问器并约束 legacy import 副作用
 
 ## 审查记录
 
@@ -58,6 +59,8 @@
 - Task 16 已完成验证；工作区新增 `答题卡设计` tab，复用旧设计器但通过 `configure_project_designer()` 上下文管理器临时指向当前项目资产，退出时还原旧模块全局路径。`阅卷` tab 内继续保留 `单套识别` 和 `批量阅卷` 两个子 tab；空白 layout 时两个入口仍显示前置提示。全量测试 `183 passed, 1 skipped`，浏览器烟测通过设计器渲染、阅卷子 tab 保留和批量 tab 切换。
 - Task 17 计划：恢复项目级 online OCR / LLM 配置入口，并接入空白试卷校对模块。配置写入当前项目的 `config/api_keys.json` 与 `config/model_config.json`，不再写旧系统根目录；空白校对复用旧系统 `views.calibration_view.render_calibration()`，但用上下文管理器把 `_LAYOUT_PATH` 和 `_BASELINE_PATH` 指向当前项目的 layout 与 baseline 资产。保存项目时现有 checksum 刷新会把 baseline 打进 `.examproj`。
 - Task 17 已完成验证；侧边栏恢复 `ModelScope API Key`、备用 Key、OCR 专用 Key、在线 OCR 模型、Base URL、LLM 模型和保存按钮，写入当前项目 `config/api_keys.json` 与 `config/model_config.json`。工作区新增 `空白校对` tab，复用旧空白校对 view 但通过 `configure_project_calibration()` 指向当前项目 layout、baseline 和 workdir。全量测试 `188 passed, 1 skipped`，浏览器烟测通过新建项目、online OCR 字段显示、空白校对渲染、`单套识别`/`批量阅卷` 保留。
+- Task 18 计划：按 round3 review 收口三个残余点。第一，把 `config_dir`、`data_dir`、`output_dir`、`processed_dir`、`answer_sheets_dir`、`saved_designs_dir`、`api_keys_path`、`model_config_path`、`batch_checkpoint_path`、`uploaded_answer_key_path` 等路径放到 `ExamProject`，让 GUI 适配层不再散写 `workdir / "..."`。第二，把 `_import_legacy_module()` 的 `sys.path` 注入改成临时上下文，只移除本次新增的 legacy root，避免污染进程级 import 状态。第三，在复盘里补“用户从新建项目到首次阅卷”的操作路径。
+- Task 18 已完成验证；`ExamProject` 新增项目资产与运行期路径访问器，GUI 适配层改读 project property；`_import_legacy_module()` 通过临时 `sys.path` 上下文导入 legacy 模块，只移除本次新增的 root，预先存在的 root 不动；复盘补用户操作路径。局部测试 `21 passed`，全量测试 `191 passed, 1 skipped`，GUI 烟测通过新建项目、设计器、空白校对、单套识别和批量阅卷渲染。
 
 ### Task 15 详细计划：项目工作区、打开/保存与阅卷视图复用
 
@@ -238,6 +241,52 @@ Worth doing：必须做。否则项目工作区缺少在线 OCR 配置入口，�
    - GUI 烟测：侧边栏出现 online OCR 配置；工作区出现 `空白校对` tab；阅卷 tab 仍保留 `单套识别` 和 `批量阅卷`。
    - 全量测试：`py -m pytest -p no:cacheprovider`。
 
+### Task 18 详细计划：收口项目路径访问器并约束 legacy import 副作用
+
+#### 需求理解
+
+Round3 review 的要求不是继续堆功能，而是把 Task 16/17 暴露出来的坏味道收掉：GUI 适配层里仍有一批 `workdir / "..."` 路径拼接，`_import_legacy_module()` 修改 `sys.path` 后不还原，`plan.md` 复盘缺少用户操作路径。这些问题现在不炸，但会在下一轮迁移里放大。
+
+#### Linus 五层拆解
+
+1. 数据结构：`ExamProject` 应该拥有项目内路径规则。调用方只问 `project.api_keys_path`、`project.output_dir`，不该知道 `config/`、`data/` 的字符串细节。
+2. 特殊情况：`sys.path` 只能临时暴露 legacy root；如果 root 原本已在 `sys.path`，不能擅自移除；如果是本次新增，导入结束必须还原。
+3. 复杂度：不迁移识别/评分模块本体，只收口路径和 import 副作用。迁移旧模块是后续任务，不在本次伪装完成。
+4. 破坏分析：新增 `ExamProject` property 不改变 `.examproj` 包格式；替换调用方路径来源不改变实际目录；legacy module 仍走 `importlib.import_module()`，只减少副作用。
+5. 实用性：这是真问题。否则 Task 18 以后每加一个模块都要复制路径字符串，`sys.path` 污染也会让测试隔离变脏。
+
+#### 核心判断
+
+Worth doing：必须做。不是为了“架构好看”，而是为了不让项目路径规则和 import 副作用继续扩散。
+
+#### 实施步骤
+
+1. 扩展 `ExamProject` 路径访问器
+   - 新增 `design_path`、`config_dir`、`data_dir`、`output_dir`、`processed_dir`、`answer_sheets_dir`、`saved_designs_dir`、`api_keys_path`、`model_config_path`、`batch_checkpoint_path`、`uploaded_answer_key_path`。
+   - 核心资产仍通过 `asset_path()` 解析；运行期目录只集中定义在 `ExamProject`，不进 manifest。
+   - 补 `tests/core/test_project.py`，验证这些 property 的实际路径不变。
+
+2. 替换 GUI 适配层内联路径
+   - `project_paths()` 改用 `project.answer_sheets_dir`、`project.output_dir`、`project.processed_dir`、`project.api_keys_path`、`project.model_config_path`、`project.batch_checkpoint_path`。
+   - `configure_project_designer()` 改用 `project.design_path` 和 `project.saved_designs_dir`。
+   - `apply_project_layout()` 改用 `project.uploaded_answer_key_path`。
+   - 更新现有 GUI adapter 测试，测试期望也改读 project property，避免测试复制旧字符串。
+
+3. 收口 legacy import 的 `sys.path` 副作用
+   - 新增 `_legacy_sys_path(legacy_root)` 上下文管理器。
+   - `_import_legacy_module()` 在该上下文里调用 `importlib.import_module()`。
+   - 如果 legacy root 原本不在 `sys.path`，导入结束移除；如果原本存在，保持不动。
+   - 补私有行为测试：导入临时 legacy module 后，新增 root 不残留；预先存在的 root 不被移除。
+
+4. 补用户操作路径复盘
+   - 在最终复盘补一条用户路径：新建/打开项目 -> 答题卡设计 -> 空白校对 -> 配置 OCR/LLM -> 单套调试 -> 批量阅卷 -> 保存项目。
+   - 明确当前路径仍复用旧 Streamlit view，后续迁移目标是自有模块，不是再补入口。
+
+5. 验证
+   - 局部测试：`py -m pytest tests\core\test_project.py tests\gui\test_grading_adapter.py -p no:cacheprovider`
+   - 全量测试：`py -m pytest -p no:cacheprovider`
+   - 若 UI 代码路径有变化，启动 GUI 做一次工作区烟测。
+
 ## 最终复盘
 
 - 已完成 `.examproj` foundation：manifest、checksum、安全 ZIP 打包/打开/保存、运行期项目对象、业务校验、完整打开前验证、旧系统资产导入和 CLI。
@@ -246,11 +295,14 @@ Worth doing：必须做。否则项目工作区缺少在线 OCR 配置入口，�
 - 已接入答题卡设计器；设计器源数据写入当前项目的 `design` 资产，识别 layout 写入当前项目的 `layout` 资产，且旧设计器全局路径 patch 已加上下文保护。
 - 已恢复项目级 online OCR / LLM 配置；配置写入当前 `.examproj` 工作区的 `config/api_keys.json` 与 `config/model_config.json`，不会污染旧系统根目录。
 - 已接入空白校对模块；空白基准写入当前项目的 `config/blank_baseline.json`，项目保存时刷新 checksum 并打包进 `.examproj`。
+- 已收口项目路径访问器；GUI 适配层使用 `ExamProject` 的 `design_path`、`api_keys_path`、`output_dir` 等 property，不再散写这些路径规则。
+- 已约束 legacy import 副作用；导入旧模块时临时加入 legacy root，导入结束后恢复 `sys.path`，避免测试和后续迁移被进程级路径污染。
+- 用户主路径已经闭合：新建或打开项目 -> 答题卡设计 -> 空白校对 -> 配置 OCR/LLM -> 单套识别调试与演示 -> 批量阅卷 -> 保存项目写回 `.examproj`。
 - `阅卷` 工作区明确保留两条路径：`单套识别` 用于调试过程和课堂演示，`批量阅卷` 用于正式批处理。
 - 旧系统真实根目录的 `config/sheet_layout.json` 与根目录 `参考答案.xlsx` 本身错配；新导入器会拒绝这种坏组合，这是正确行为，不应绕过校验。
 - 当前阶段仍在复用旧系统 Streamlit 视图；后续重点不是再补入口，而是把旧识别、评分、设计器、空白校对和阅卷视图逐步迁移到 `exam_project` 自有模块。
 
 ## 后续计划
 
-1. Task 18 定义旧模块迁移退出条件和路径访问器整理范围。
-2. 逐步把旧系统识别、评分、设计器、空白校对和阅卷视图从同级目录依赖迁移到 `exam_project` 自有包，并为每项迁移写明退出任务编号。
+1. Task 19 开始逐项迁移旧系统识别、评分、设计器、空白校对和阅卷视图到 `exam_project` 自有包，并为每项迁移写明退出任务编号。
+2. 迁移完成前，新增功能不得再直接扩散同级 `auto_grading_system` 运行时依赖；必须先落在适配层或自有模块。

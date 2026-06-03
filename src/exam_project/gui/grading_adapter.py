@@ -17,29 +17,43 @@ def default_legacy_root() -> Path:
 
 
 def project_paths(project: ExamProject) -> dict[str, str]:
-    workdir = project.workdir
-    data_dir = workdir / "data"
-    output_dir = data_dir / "output"
-    processed_dir = data_dir / "processed"
-    answer_sheets_dir = data_dir / "answer_sheets"
-    for path in (output_dir, processed_dir, answer_sheets_dir, workdir / "config"):
+    for path in (
+        project.output_dir,
+        project.processed_dir,
+        project.answer_sheets_dir,
+        project.config_dir,
+    ):
         path.mkdir(parents=True, exist_ok=True)
     return {
         "answer_key": str(project.answers_path),
-        "default_folder": str(answer_sheets_dir),
-        "output_dir": str(output_dir),
-        "processed_dir": str(processed_dir),
-        "api_keys": str(workdir / "config" / "api_keys.json"),
-        "model_config": str(workdir / "config" / "model_config.json"),
-        "batch_checkpoint": str(output_dir / "_batch_checkpoint.json"),
+        "default_folder": str(project.answer_sheets_dir),
+        "output_dir": str(project.output_dir),
+        "processed_dir": str(project.processed_dir),
+        "api_keys": str(project.api_keys_path),
+        "model_config": str(project.model_config_path),
+        "batch_checkpoint": str(project.batch_checkpoint_path),
     }
 
 
-def _import_legacy_module(name: str, legacy_root: Path) -> ModuleType:
+@contextmanager
+def _legacy_sys_path(legacy_root: Path):
     root_text = str(legacy_root)
-    if root_text not in sys.path:
+    already_present = root_text in sys.path
+    if not already_present:
         sys.path.insert(0, root_text)
-    return importlib.import_module(name)
+    try:
+        yield
+    finally:
+        if not already_present:
+            try:
+                sys.path.remove(root_text)
+            except ValueError:
+                pass
+
+
+def _import_legacy_module(name: str, legacy_root: Path) -> ModuleType:
+    with _legacy_sys_path(legacy_root):
+        return importlib.import_module(name)
 
 
 def _default_design(project: ExamProject) -> dict[str, Any]:
@@ -100,21 +114,20 @@ def _configure_project_designer(
     root = legacy_root or default_legacy_root()
     designer = _import_legacy_module("views.designer_view", root)
 
-    project.asset_path("design").parent.mkdir(parents=True, exist_ok=True)
+    project.design_path.parent.mkdir(parents=True, exist_ok=True)
     project.layout_path.parent.mkdir(parents=True, exist_ok=True)
-    saved_designs_dir = project.workdir / "design" / "saved_designs"
-    saved_designs_dir.mkdir(parents=True, exist_ok=True)
+    project.saved_designs_dir.mkdir(parents=True, exist_ok=True)
 
     designer._BASE_DIR = str(project.workdir)
     designer._LAYOUT_PATH = str(project.layout_path)
-    designer._SAVED_DESIGNS_DIR = str(saved_designs_dir)
-    designer._AUTOSAVE_PATH = str(project.asset_path("design"))
+    designer._SAVED_DESIGNS_DIR = str(project.saved_designs_dir)
+    designer._AUTOSAVE_PATH = str(project.design_path)
 
     try:
-        data = json.loads(project.asset_path("design").read_text(encoding="utf-8"))
+        data = json.loads(project.design_path.read_text(encoding="utf-8"))
         designer.AnswerSheetConfig.from_dict(data)
     except Exception:
-        project.asset_path("design").write_text(
+        project.design_path.write_text(
             json.dumps(_default_design(project), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -186,8 +199,7 @@ def apply_project_layout(project: ExamProject, legacy_root: Path | None = None) 
         {"judge": [0.06, 0.46], "essay": [0.50, 0.90]},
     )
 
-    upload_path = project.workdir / "answers" / "_uploaded_answer_key.xlsx"
-    components._UPLOADED_AK_PATH = str(upload_path)
+    components._UPLOADED_AK_PATH = str(project.uploaded_answer_key_path)
 
 
 def load_baseline(project: ExamProject, legacy_root: Path | None = None) -> dict[str, Any]:
