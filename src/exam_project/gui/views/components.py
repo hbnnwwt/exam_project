@@ -139,15 +139,14 @@ def project_paths_for_session(project_workdir: Path) -> dict[str, str]:
     返回字段：answer_key / default_folder / output_dir / processed_dir /
               api_keys / model_config / batch_checkpoint。
     """
-    from exam_project.gui.grading_adapter import project_paths
-    return project_paths(_FakeProject(project_workdir))
-
-
-class _FakeProject:
-    """grading_adapter.project_paths 期望传入 ExamProject 形态的对象。
-
-    实际使用只访问 .workdir，因此用 duck-typed 包装即可。
-    """
-
-    def __init__(self, workdir: Path) -> None:
-        self.workdir = workdir
+    data_dir = project_workdir / "data"
+    config_dir = project_workdir / "config"
+    return {
+        "answer_key": str(project_workdir / "参考答案.xlsx"),
+        "default_folder": str(data_dir / "answer_sheets"),
+        "output_dir": str(data_dir / "output"),
+        "processed_dir": str(data_dir / "processed"),
+        "api_keys": str(config_dir / "api_keys.json"),
+        "model_config": str(config_dir / "model_config.json"),
+        "batch_checkpoint": str(data_dir / "output" / "_batch_checkpoint.json"),
+    }

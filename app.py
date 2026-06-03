@@ -9,16 +9,6 @@ import streamlit as st
 
 from exam_project.core.errors import ProjectError
 from exam_project.core.package import ExamProjectPackage
-from exam_project.gui.grading_adapter import (
-    apply_project_layout,
-    configure_project_calibration,
-    configure_project_designer,
-    default_legacy_root,
-    load_baseline,
-    load_model_config,
-    project_paths,
-    save_json_config,
-)
 from exam_project.gui.session import (
     ProjectSession,
     create_and_open_project,
@@ -113,29 +103,19 @@ def _layout_ready(layout: dict[str, Any]) -> tuple[bool, str]:
 
 
 def render_designer_tab(session: ProjectSession) -> None:
-    legacy_root = default_legacy_root()
-    if not legacy_root.is_dir():
-        st.error(f"找不到旧阅卷系统目录: {legacy_root}")
-        return
+    from exam_project.gui.views.designer import render_designer
     try:
-        with configure_project_designer(session.project, legacy_root) as designer:
-            _reset_designer_state_for_project(session)
-            st.info("同步识别配置后，请点击左侧“保存”写回 .examproj 项目包。")
-            designer.render_designer()
+        st.info("同步识别配置后，请点击左侧“保存”写回 .examproj 项目包。")
+        render_designer(session.project)
     except Exception as exc:
         st.error(f"答题卡设计器加载失败: {exc}")
 
 
 def render_calibration_tab(session: ProjectSession) -> None:
-    legacy_root = default_legacy_root()
-    if not legacy_root.is_dir():
-        st.error(f"找不到旧阅卷系统目录: {legacy_root}")
-        return
+    from exam_project.gui.views.calibration import render_calibration_view
     try:
-        apply_project_layout(session.project, legacy_root)
-        with configure_project_calibration(session.project, legacy_root) as calibration:
-            st.info("保存空白基准后，请点击左侧“保存”写回 .examproj 项目包。")
-            calibration.render_calibration()
+        st.info("保存空白基准后，请点击左侧“保存”写回 .examproj 项目包。")
+        render_calibration_view(session.project)
     except Exception as exc:
         st.error(f"空白校对模块加载失败: {exc}")
 
@@ -448,18 +428,14 @@ def render_grading_controls(paths: dict[str, str]) -> dict[str, Any]:
 
 
 def render_single_and_batch(session: ProjectSession) -> None:
-    legacy_root = default_legacy_root()
-    if not legacy_root.is_dir():
-        st.error(f"找不到旧阅卷系统目录: {legacy_root}")
-        return
+    from exam_project.gui.views.single import render_single
+    from exam_project.gui.views.batch import render_batch
+    from exam_project.gui.views.components import project_paths_for_session
 
     try:
-        apply_project_layout(session.project, legacy_root)
-        paths = project_paths(session.project)
+        paths = project_paths_for_session(session.project.workdir)
         controls = render_grading_controls(paths)
-        baselines = load_baseline(session.project, legacy_root)
-        single_view = _load_legacy_module("views.single_view")
-        batch_view = _load_legacy_module("views.batch_view")
+        baselines = _load_baseline_for_project(session.project)
     except Exception as exc:
         st.error(f"阅卷界面加载失败: {exc}")
         return
@@ -476,15 +452,39 @@ def render_single_and_batch(session: ProjectSession) -> None:
             st.info("批量阅卷用于正式批处理。请先完成答题卡设计并同步识别配置。")
         return
 
-    kwargs = {
-        **controls,
-        "PATHS": paths,
-        **baselines,
-    }
     with single_tab:
-        single_view.render_single(**kwargs)
+        render_single(
+            project=session.project, paths=paths,
+            controls=controls, baseline=baselines,
+        )
     with batch_tab:
-        batch_view.render_batch(**kwargs)
+        render_batch(
+            project=session.project, paths=paths,
+            controls=controls, baseline=baselines,
+        )
+
+
+def _load_baseline_for_project(project) -> dict:
+    """从项目 baseline 资产加载（如果存在）。"""
+    from exam_project.recognition.blank_calibrator import (
+        get_choice_baseline_dict,
+        get_choice_zone_bounds,
+        get_judge_baseline_dict,
+        get_judge_zone_bounds,
+        load_baseline,
+    )
+    baseline_path = project.baseline_path
+    if not baseline_path.is_file():
+        return {}
+    data = load_baseline(baseline_path)
+    if not data:
+        return {}
+    return {
+        "choice_baseline": get_choice_baseline_dict(data),
+        "judge_baseline": get_judge_baseline_dict(data),
+        "choice_zone_bounds": get_choice_zone_bounds(data),
+        "judge_zone_bounds": get_judge_zone_bounds(data),
+    }
 
 
 def render_assets_tab(session: ProjectSession) -> None:
