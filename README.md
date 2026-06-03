@@ -20,6 +20,12 @@ Install in editable mode:
 python -m pip install -e .[dev]
 ```
 
+Install the GUI extra if you want to use `run_gui.bat`:
+
+```bash
+python -m pip install -e .[gui]
+```
+
 Run tests:
 
 ```bash
@@ -51,6 +57,22 @@ After installation, the console script is also available:
 ```bash
 exam-project inspect demo.examproj
 ```
+
+## GUI
+
+On Windows, double-click:
+
+```text
+run_gui.bat
+```
+
+The GUI is a thin Streamlit front end for the current foundation features:
+
+- import old project assets into `.examproj`
+- inspect an existing `.examproj` manifest
+
+It does not yet migrate the old recognition, grading, calibration, or designer
+workflows.
 
 ## Package Contract
 

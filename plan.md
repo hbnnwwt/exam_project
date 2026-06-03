@@ -29,6 +29,7 @@
 - [x] Task 10：CLI Inspect 与 Legacy Import
 - [x] Task 11：README 更新
 - [x] Task 12：最终验证
+- [x] Task 13：补充 GUI 启动入口
 
 ## 审查记录
 
@@ -42,6 +43,8 @@
 - Task 10 已完成规格审查和代码质量审查；CLI 只暴露 import-legacy 和 inspect，inspect 使用临时子目录避免 `.old-*` 残留，项目错误以退出码 2 和用户可读 stderr 返回。
 - Task 11 已完成文档审查；README 记录 foundation 范围、开发命令、CLI 用法和 `.examproj` 包契约，避免承诺尚未迁移的 UI、识别和评分工作流。
 - Task 12 已完成最终验证；全量测试 `163 passed, 1 skipped`，手工 CLI import/inspect 烟测通过，GitHub 分支已按里程碑推送。
+- Task 13 计划：补一个 Streamlit 薄 GUI，只暴露旧项目导入和项目包检查；新增 `run_gui.bat` 复用旧系统的 Python 检测和端口切换逻辑；README 说明 CLI 与 GUI 两种运行方式。
+- Task 13 已完成验证；`run_gui.bat` 可启动 Streamlit GUI，浏览器实测导入旧项目夹具并检查 manifest 通过，全量测试仍为 `163 passed, 1 skipped`。
 
 ## 最终复盘
 

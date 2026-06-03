@@ -12,6 +12,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gui = [
+    "streamlit>=1.36.0",
+]
 dev = [
     "pytest>=8.0",
 ]
