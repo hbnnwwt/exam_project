@@ -78,6 +78,20 @@ def _merge_primary_and_fallback(primary: Any, fallback_list: list[str]) -> Any:
     return result if result else ""
 
 
+def load_model_config(path: str | Path) -> dict[str, Any]:
+    """加载 JSON 配置文件，不存在时返回空 dict。"""
+    from exam_project.grading.llm_grader import load_config
+
+    return load_config(path)
+
+
+def save_json_config(path: str | Path, config: dict[str, Any]) -> None:
+    """保存 JSON 配置文件（内部调用 save_config，参数顺序适配）。"""
+    from exam_project.grading.llm_grader import save_config
+
+    save_config(config, path)
+
+
 def _reset_designer_state_for_project(session: ProjectSession) -> None:
     project_id = session.manifest.project_id
     if st.session_state.get(DESIGNER_PROJECT_KEY) == project_id:
