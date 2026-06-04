@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -9,6 +8,7 @@ import streamlit as st
 
 from exam_project.core.errors import ProjectError
 from exam_project.core.package import ExamProjectPackage
+from exam_project.grading import defaults as _defaults_module
 from exam_project.gui.session import (
     ProjectSession,
     create_and_open_project,
@@ -17,6 +17,7 @@ from exam_project.gui.session import (
     save_project,
     save_project_as,
 )
+from exam_project.recognition import essay as _essay_module
 
 
 SESSION_KEY = "exam_project_session"
@@ -75,10 +76,6 @@ def _merge_primary_and_fallback(primary: Any, fallback_list: list[str]) -> Any:
     if len(result) == 1:
         return result[0]
     return result if result else ""
-
-
-def _load_legacy_module(name: str):
-    return importlib.import_module(name)
 
 
 def _reset_designer_state_for_project(session: ProjectSession) -> None:
@@ -237,8 +234,8 @@ def render_project_sidebar(session: ProjectSession) -> None:
 
 
 def render_grading_controls(paths: dict[str, str]) -> dict[str, Any]:
-    defaults = _load_legacy_module("modules.defaults")
-    essay_recognizer = _load_legacy_module("modules.essay_recognizer")
+    defaults = _defaults_module
+    essay_recognizer = _essay_module
 
     with st.sidebar:
         st.divider()
