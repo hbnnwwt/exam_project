@@ -288,17 +288,61 @@ def render_batch(
             st.warning(f"处理 {p1.name} 失败: {exc}")
         progress.progress(idx / len(pairs))
 
-    # 输出 xlsx
+    # 输出 xlsx + json
     if student_results:
         output_xlsx = processed_dir.parent / "结果.xlsx"
+        output_json = processed_dir.parent / "grading_results.json"
         try:
             _save_results_xlsx(svc, template_xlsx, output_xlsx, student_results)
-            st.success(f"批量完成。{len(student_results)} 个学生，结果已保存到 {output_xlsx}")
+            _save_grading_json(svc, output_json, student_results)
+            st.success(
+                f"批量完成。{len(student_results)} 个学生，"
+                f"结果已保存到 {output_xlsx} 和 {output_json}"
+            )
         except Exception as exc:
             st.error(f"保存结果失败: {exc}")
     else:
         st.info("没有新处理的学生（可能都已处理过）。")
 
+
+
+
+
+def _save_grading_json(
+    svc: GradingService,
+    output_path: Path,
+    student_results: list[tuple[Optional[str], dict]],
+) -> None:
+    """将批量评分结果保存为结构化 JSON，供试卷分析模块使用。"""
+    records = []
+    for sid, recognized in student_results:
+        result = svc.grade(recognized)
+        records.append({
+            "student_id": sid,
+            "total_score": result.total,
+            "max_score": svc.max_total,
+            "choice_total": result.choice_total,
+            "judge_total": result.judge_total,
+            "essay_total": result.essay_total,
+            "choice_detail": {str(k): v for k, v in result.choice.items()},
+            "judge_detail": {str(k): v for k, v in result.judge.items()},
+            "essay_detail": {str(k): v for k, v in result.essay_detail.items()},
+        })
+    data = {
+        "students": records,
+        "answer_key": {
+            "choice": {str(k): v for k, v in svc.answer_key.get("choice", {}).items()},
+            "judge": {str(k): v for k, v in svc.answer_key.get("judge", {}).items()},
+            "essay": {str(k): v for k, v in svc.answer_key.get("essay", {}).items()},
+        },
+        "config": {
+            "choice_score": svc.config.choice_score,
+            "judge_score": svc.config.judge_score,
+            "essay_max_score": svc.config.essay_max_score,
+        },
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def _load_grading_service(template_xlsx: Path) -> Optional[GradingService]:
     if not template_xlsx.is_file():

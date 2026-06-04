@@ -593,6 +593,96 @@ def render_home(session: ProjectSession) -> None:
             st.rerun()
 
 
+def render_analysis_tab(session: ProjectSession) -> None:
+    """试卷分析页面。"""
+    from exam_project.analysis import ExamAnalyzer
+    from exam_project.gui.views.components import project_paths_for_session
+
+    st.subheader("📈 试卷分析")
+
+    paths_dict = project_paths_for_session(session.project.workdir)
+    grading_json = Path(paths_dict["processed_dir"]).parent / "grading_results.json"
+
+    if not grading_json.is_file():
+        st.warning("未找到批量批改结果。请先在「阅卷」页面执行批量阅卷。")
+        st.info(f"期望结果文件: {grading_json}")
+        return
+
+    try:
+        analyzer = ExamAnalyzer.from_json(grading_json)
+        report = analyzer.generate_report()
+    except Exception as exc:
+        st.error(f"分析数据加载失败: {exc}")
+        return
+
+    if report.total_students == 0:
+        st.info("批改结果为空，无法生成分析。")
+        return
+
+    # 概览指标
+    st.markdown("---")
+    st.subheader("📊 班级概览")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("学生数", report.total_students)
+    c2.metric("平均分", f"{report.average_score:.1f}")
+    c3.metric("中位数", f"{report.median_score:.1f}")
+    c4.metric("最高分", f"{report.max_score:.1f}")
+    c5.metric("最低分", f"{report.min_score:.1f}")
+
+    # 分数段分布
+    st.markdown("---")
+    st.subheader("📉 分数段分布")
+    dist_data = [
+        {"分数段": d.range_label, "人数": d.count, "占比": f"{d.percentage:.1%}"}
+        for d in report.score_distribution
+    ]
+    st.dataframe(dist_data, use_container_width=True, hide_index=True)
+
+    # 题目统计
+    st.markdown("---")
+    st.subheader("📝 题目统计")
+    if report.question_stats:
+        q_data = [
+            {
+                "题号": q.question_id,
+                "满分": q.max_score,
+                "平均得分": q.avg_score,
+                "得分率": f"{q.avg_score_rate:.1%}",
+                "正确率": f"{q.correct_rate:.1%}",
+                "区分度": f"{q.discrimination_index:.3f}" if q.discrimination_index is not None else "-",
+                "空白数": q.blank_count,
+            }
+            for q in report.question_stats
+        ]
+        st.dataframe(q_data, use_container_width=True, hide_index=True)
+    else:
+        st.info("无题目统计数据。")
+
+    # 异常题
+    if report.anomalous_questions:
+        st.markdown("---")
+        st.subheader("⚠️ 异常题目")
+        for q in report.anomalous_questions:
+            st.warning(f"第 {q.question_id} 题: {q.anomaly_reason}")
+
+    # 学生排名
+    st.markdown("---")
+    st.subheader("🏆 学生排名（Top 20）")
+    if report.student_ranking:
+        rank_data = [
+            {
+                "排名": s["rank"],
+                "学号": s["student_id"],
+                "总分": s["total_score"],
+                "得分率": f"{s['score_rate']:.1%}",
+            }
+            for s in report.student_ranking[:20]
+        ]
+        st.dataframe(rank_data, use_container_width=True, hide_index=True)
+    else:
+        st.info("无学生排名数据。")
+
+
 def init_session_state() -> None:
     if "current_page" not in st.session_state:
         st.session_state.current_page = "home"
@@ -621,6 +711,7 @@ def main() -> None:
             ("📐 答题卡设计", "designer"),
             ("🎯 空白校对", "calibration"),
             ("🔍 阅卷", "grading"),
+            ("📈 试卷分析", "analysis"),
             ("📁 项目资产", "assets"),
         ]
 
@@ -650,6 +741,7 @@ def main() -> None:
             "designer": render_designer_tab,
             "calibration": render_calibration_tab,
             "grading": render_single_and_batch,
+            "analysis": render_analysis_tab,
             "assets": render_assets_tab,
         }
         renderer = page_renderers.get(current_page, render_home)
