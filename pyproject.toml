@@ -9,6 +9,7 @@ description = "Single-file exam project package for answer sheet design, calibra
 requires-python = ">=3.11"
 dependencies = [
     "openpyxl>=3.1.0",
+    "opencv-python>=4.9.0",
 ]
 
 [project.optional-dependencies]
