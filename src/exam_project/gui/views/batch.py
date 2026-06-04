@@ -31,7 +31,7 @@ from exam_project.recognition.judge import JudgeRecognizer
 from exam_project.recognition.layout import LayoutAnalyzer
 from exam_project.recognition.preprocess import ImagePreprocessor
 from exam_project.recognition.student_id import StudentIdRecognizer
-from exam_project.constants import sorted_image_paths, is_image_file
+from exam_project.recognition.constants import sorted_image_paths, is_image_file
 
 from .components import (
     load_image_from_bytes,
