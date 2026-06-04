@@ -50,7 +50,7 @@ def test_render_html_contains_css() -> None:
     cfg = _config()
     html = render_html(cfg, paginate(cfg))
     assert "<style>" in html
-    assert "bubble-cell" in html
+    assert "q-item" in html
 
 
 def test_render_html_contains_pages() -> None:

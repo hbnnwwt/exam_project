@@ -102,7 +102,8 @@ def test_student_id_render() -> None:
     comp = StudentIdComponent(section)
     html = comp.render(1, 0.0, "A4")
     assert "student-id" in html
-    assert 'data-digits="10"' in html
+    assert 'class="sid-grid"' in html
+    assert "repeat(10, 1fr)" in html
 
 
 def test_student_id_cannot_split() -> None:

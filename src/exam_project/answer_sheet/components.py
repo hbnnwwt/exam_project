@@ -1,25 +1,13 @@
-"""答题卡渲染组件。
-
-每个 Section 对应一个 Component 子类，负责：
-- estimate_height: 估算打印占用高度（mm）
-- render: 输出 HTML 字符串
-- split: 跨页时拆分为两个 Component
-
-设计要点：
-- Component 抽象基类定义三件套接口
-- 子类各自实现 estimate_height / render / split
-- 拆分的判断与实现与原版一致
-"""
+"""答题卡渲染组件。"""
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Tuple
 
-from .schema import SectionConfig
+from .schema import SectionConfig, StudentIdConfig
 
-
-# 排版常量（mm）
 SECTION_GAP_MM = 5.0
 SECTION_BORDER_MM = 0.6
 SECTION_TITLE_MM = 9.5
@@ -43,21 +31,17 @@ class Component(ABC):
         """估算组件在指定纸张上占用的毫米高度。"""
 
     @abstractmethod
-    def render(
-        self, page_num: int, y_offset_mm: float, paper_size: str = "A4",
-    ) -> str:
+    def render(self, page_num: int, y_offset_mm: float, paper_size: str = "A4") -> str:
         """渲染为 HTML 字符串。"""
 
     @abstractmethod
     def split(
-        self, available_height: float, paper_size: str = "A4",
+        self, available_height: float, paper_size: str = "A4"
     ) -> Optional[Tuple["Component", "Component"]]:
         """尝试在 available_height 处拆分为两个组件。
 
         返回 (first_part, remaining_part) 或 None（不可拆分）。
         """
-
-    # ----------------------------------------------------- 通用工具
 
     def _cols_for_paper(self, paper_size: str) -> int:
         """根据选项数量自动计算每行可容纳的题数。"""
@@ -74,7 +58,11 @@ class Component(ABC):
         return 2
 
     def _section_instruction_height(self) -> float:
-        """返回普通题型说明行占用高度。"""
+        """返回普通题型说明行占用高度。
+
+        SectionConfig.instruction 的语义是：None 使用默认说明，"" 隐藏说明，
+        非空字符串显示自定义说明。因此只有空字符串不占高度。
+        """
         return 0.0 if getattr(self.config, "instruction", None) == "" else SECTION_INSTRUCTION_MM
 
     def _before_gap_height(self) -> float:
@@ -87,253 +75,530 @@ class Component(ABC):
         return f'<div class="section-before-gap" style="height: {gap:g}mm"></div>\n'
 
     def _section_fixed_height(self) -> float:
-        """section 除内容网格/列表以外的固定高度。"""
+        """普通 section 除内容网格/列表以外的打印流高度。"""
         return (
             self._before_gap_height()
             + SECTION_TITLE_MM
             + self._section_instruction_height()
-            + SECTION_BORDER_MM * 2
+            + SECTION_BORDER_MM
+            + SECTION_GAP_MM
         )
 
+    def _bubble_grid_height(self, rows: int) -> float:
+        if rows <= 0:
+            return 0.0
+        return rows * BUBBLE_MM + max(0, rows - 1) * GRID_GAP_MM + GRID_BOTTOM_MM
 
-# ============================================================================
-# 共享 HTML 片段
-# ============================================================================
-
-
-def _section_header_html(title: str, q_start: int, q_count: int, section_type: str) -> str:
-    """section 标题行。"""
-    label = f"第 {q_start} - {q_start + q_count - 1} 题" if q_count > 0 else ""
-    return (
-        f'<div class="section-title">'
-        f'<span class="section-name">{title}</span>'
-        f'<span class="section-range">{label}</span>'
-        f'<span class="section-type" data-type="{section_type}"></span>'
-        f'</div>'
-    )
-
-
-def _grid_html(cells: list[dict], cols: int, paper_size: str) -> str:
-    """把 cells 渲染为 N 列的网格。"""
-    parts: list[str] = []
-    for i, cell in enumerate(cells):
-        if i > 0 and i % cols == 0:
-            parts.append('<div class="grid-row-break"></div>')
-        parts.append(_cell_html(cell))
-    return '<div class="bubble-grid">' + ''.join(parts) + '</div>'
-
-
-def _cell_html(cell: dict) -> str:
-    """单个 cell（题号 + 选项气泡）。"""
-    q_label = cell.get("q_label", "")
-    options = cell.get("options", [])
-    bubbles = ''.join(
-        f'<span class="bubble" data-option="{o}"></span>' for o in options
-    )
-    return f'<div class="bubble-cell"><span class="q-label">{q_label}</span>{bubbles}</div>'
-
-
-# ============================================================================
-# 具体组件
-# ============================================================================
-
-
-class ChoiceComponent(Component):
-    """选择题组件。"""
-
-    def __init__(self, config: SectionConfig) -> None:
-        super().__init__(config)
-        self.options = config.options or ["A", "B", "C", "D"]
-
-    def estimate_height(self, paper_size: str = "A4") -> float:
-        cols = self._cols_for_paper(paper_size)
-        n_rows = (self.config.question_count + cols - 1) // cols
-        grid_height = SECTION_BORDER_MM * 2 + BUBBLE_MM * n_rows + GRID_GAP_MM * (n_rows - 1)
-        return self._section_fixed_height() + grid_height + GRID_BOTTOM_MM
-
-    def render(
-        self, page_num: int, y_offset_mm: float, paper_size: str = "A4",
-    ) -> str:
-        title = self.config.title or "选择题"
-        cols = self._cols_for_paper(paper_size)
-        cells: list[dict] = []
-        for i in range(self.config.question_count):
-            q = self.config.question_start + i
-            cells.append({"q_label": str(q), "options": self.options})
-        header = _section_header_html(
-            title, self.config.question_start, self.config.question_count, "choice",
-        )
-        grid = _grid_html(cells, cols, paper_size)
-        before = self._before_gap_html()
-        return (
-            f'<div class="section section-choice" data-page="{page_num}" '
-            f'data-y="{y_offset_mm:g}">'
-            f'{before}{header}{grid}</div>'
-        )
-
-    def split(
-        self, available_height: float, paper_size: str = "A4",
-    ) -> Optional[Tuple["Component", "Component"]]:
-        if self.config.question_count <= 1:
-            return None
-        cols = self._cols_for_paper(paper_size)
-        # 估算当前页能放几行
-        grid_per_row = SECTION_BORDER_MM * 2 + BUBBLE_MM + GRID_GAP_MM
-        rows_avail = int((available_height - self._section_fixed_height() - GRID_BOTTOM_MM) // (BUBBLE_MM + GRID_GAP_MM))
-        if rows_avail < 1:
-            return None
-        first_count = min(self.config.question_count, rows_avail * cols)
-        if first_count <= 0 or first_count >= self.config.question_count:
-            return None
-        first_cfg = SectionConfig(
-            type="choice",
-            question_start=self.config.question_start,
-            question_count=first_count,
-            options=self.options,
-            score=self.config.score,
-            scores=(self.config.scores[:first_count] if self.config.scores else None),
-            title=self.config.title,
-            instruction=self.config.instruction,
-        )
-        second_cfg = SectionConfig(
-            type="choice",
-            question_start=self.config.question_start + first_count,
-            question_count=self.config.question_count - first_count,
-            options=self.options,
-            score=self.config.score,
-            scores=(self.config.scores[first_count:] if self.config.scores else None),
-            title=self.config.title,
-            instruction=self.config.instruction,
-        )
-        return ChoiceComponent(first_cfg), ChoiceComponent(second_cfg)
-
-
-class JudgeComponent(ChoiceComponent):
-    """判断题组件（结构同 ChoiceComponent，但 options 固定为 T/F）。"""
-
-    def __init__(self, config: SectionConfig) -> None:
-        super().__init__(config)
-        # 强制覆盖 options（schema 已经校验过）
-        self.options = ["T", "F"]
-
-
-class EssayComponent(Component):
-    """简答题组件。"""
-
-    def estimate_height(self, paper_size: str = "A4") -> float:
-        n = self.config.lines_per_question or 1
-        per_q = ANSWER_LINE_MM * n + ANSWER_LINE_GAP_MM * (n - 1) + ANSWER_ITEM_GAP_MM
-        return self._section_fixed_height() + per_q * self.config.question_count + GRID_BOTTOM_MM
-
-    def render(
-        self, page_num: int, y_offset_mm: float, paper_size: str = "A4",
-    ) -> str:
-        title = self.config.title or "简答题"
-        header = _section_header_html(
-            title, self.config.question_start, self.config.question_count, "essay",
-        )
-        items: list[str] = []
-        for i in range(self.config.question_count):
-            q = self.config.question_start + i
-            lines = '<div class="answer-line"></div>' * (self.config.lines_per_question or 1)
-            items.append(f'<div class="essay-item" data-q="{q}">{lines}</div>')
-        before = self._before_gap_html()
-        return (
-            f'<div class="section section-essay" data-page="{page_num}" '
-            f'data-y="{y_offset_mm:g}">'
-            f'{before}{header}<div class="essay-items">'
-            f'{"".join(items)}</div></div>'
-        )
-
-    def split(
-        self, available_height: float, paper_size: str = "A4",
-    ) -> Optional[Tuple["Component", "Component"]]:
-        if self.config.question_count <= 1:
-            return None
-        per_q = (
-            ANSWER_LINE_MM * (self.config.lines_per_question or 1)
-            + ANSWER_LINE_GAP_MM * max((self.config.lines_per_question or 1) - 1, 0)
-            + ANSWER_ITEM_GAP_MM
-        )
+    def _max_bubble_rows_for_height(self, available_height: float) -> int:
         usable = available_height - self._section_fixed_height() - GRID_BOTTOM_MM
-        first_count = int(usable // per_q)
-        if first_count < 1 or first_count >= self.config.question_count:
-            return None
-        first_cfg = SectionConfig(
-            type="essay",
-            question_start=self.config.question_start,
-            question_count=first_count,
-            score=self.config.score,
-            scores=(self.config.scores[:first_count] if self.config.scores else None),
-            title=self.config.title,
-            lines_per_question=self.config.lines_per_question,
-            instruction=self.config.instruction,
-        )
-        second_cfg = SectionConfig(
-            type="essay",
-            question_start=self.config.question_start + first_count,
-            question_count=self.config.question_count - first_count,
-            score=self.config.score,
-            scores=(self.config.scores[first_count:] if self.config.scores else None),
-            title=self.config.title,
-            lines_per_question=self.config.lines_per_question,
-            instruction=self.config.instruction,
-        )
-        return EssayComponent(first_cfg), EssayComponent(second_cfg)
+        if usable < BUBBLE_MM:
+            return 0
+        return int((usable + GRID_GAP_MM) // (BUBBLE_MM + GRID_GAP_MM))
 
-
-class SolutionComponent(EssayComponent):
-    """解答题组件（与简答题结构相同）。"""
-
-    def render(
-        self, page_num: int, y_offset_mm: float, paper_size: str = "A4",
-    ) -> str:
-        title = self.config.title or "解答题"
-        header = _section_header_html(
-            title, self.config.question_start, self.config.question_count, "solution",
-        )
-        items: list[str] = []
-        for i in range(self.config.question_count):
-            q = self.config.question_start + i
-            lines = '<div class="answer-line"></div>' * (self.config.lines_per_question or 1)
-            items.append(f'<div class="solution-item" data-q="{q}">{lines}</div>')
-        before = self._before_gap_html()
+    def _answer_item_height(self, lines_per_question: int) -> float:
+        if lines_per_question <= 0:
+            return 0.0
         return (
-            f'<div class="section section-solution" data-page="{page_num}" '
-            f'data-y="{y_offset_mm:g}">'
-            f'{before}{header}<div class="solution-items">'
-            f'{"".join(items)}</div></div>'
+            lines_per_question * ANSWER_LINE_MM
+            + max(0, lines_per_question - 1) * ANSWER_LINE_GAP_MM
         )
+
+    def _answer_list_height(self, question_count: int, lines_per_question: int) -> float:
+        if question_count <= 0:
+            return 0.0
+        return (
+            question_count * self._answer_item_height(lines_per_question)
+            + max(0, question_count - 1) * ANSWER_ITEM_GAP_MM
+            + GRID_BOTTOM_MM
+        )
+
+    def _max_answer_questions_for_height(
+        self, available_height: float, lines_per_question: int
+    ) -> int:
+        item_height = self._answer_item_height(lines_per_question)
+        usable = available_height - self._section_fixed_height() - GRID_BOTTOM_MM
+        if usable < item_height:
+            return 0
+        return int((usable + ANSWER_ITEM_GAP_MM) // (item_height + ANSWER_ITEM_GAP_MM))
 
 
 class StudentIdComponent(Component):
-    """学号填涂组件。"""
+    """学号填涂区域组件。
+
+    优先接受 SectionConfig(type="student_id", digit_count=...)；
+    向后兼容：仍可接受 StudentIdConfig（仅含 digit_count）。
+    """
+
+    def __init__(self, config: Any) -> None:
+        super().__init__(config)
+        # 兼容两种来源：SectionConfig.digit_count 或 StudentIdConfig.digit_count
+        if hasattr(config, "digit_count") and isinstance(getattr(config, "digit_count"), int):
+            self.digit_count = config.digit_count
+        else:
+            raise ValueError(
+                "StudentIdComponent 需要 digit_count 字段（来自 SectionConfig 或 StudentIdConfig）"
+            )
 
     def estimate_height(self, paper_size: str = "A4") -> float:
-        cols = self.config.digit_count or 10
-        grid = SECTION_BORDER_MM * 2 + BUBBLE_MM * 2 + GRID_GAP_MM
-        return self._section_fixed_height() + grid + GRID_BOTTOM_MM
+        # Matches print CSS: section box ~100.5mm plus the following section gap.
+        return self._before_gap_height() + 105.5
 
-    def render(
-        self, page_num: int, y_offset_mm: float, paper_size: str = "A4",
-    ) -> str:
-        digit_count = self.config.digit_count or 10
-        cells: list[dict] = []
+    def render(self, page_num: int, y_offset_mm: float = 0.0, paper_size: str = "A4") -> str:
+        cells: list[str] = []
+        # 第1行：手写学号格
+        for _ in range(self.digit_count):
+            cells.append('<div class="sid-cell sid-write-cell"></div>')
+        # 数字行 0-9：每格内含带数字的 OMR 圆形框
         for d in range(10):
-            cells.append({"q_label": str(d), "options": ["."] * digit_count})
-        header = _section_header_html(
-            "学号", 0, 0, "student_id",
-        )
-        # 学号行：每列对应一个数字位（0-9），每行是一组（题号 + N 个气泡）
-        grid = _grid_html(cells, cols=1, paper_size=paper_size)
-        before = self._before_gap_html()
-        return (
-            f'<div class="section section-student-id" data-page="{page_num}" '
-            f'data-digits="{digit_count}" data-y="{y_offset_mm:g}">'
-            f'{before}{header}{grid}</div>'
-        )
+            for _ in range(self.digit_count):
+                cells.append(f'<div class="sid-cell"><span class="sid-omr">{d}</span></div>')
+
+        html = f'''{self._before_gap_html()}<section class="student-id-section">
+  <div class="sid-title">准考证号</div>
+  <div class="sid-instruction">请用 2B 铅笔将对应数字涂黑</div>
+  <div class="sid-grid" style="grid-template-columns: repeat({self.digit_count}, 1fr);">
+    {'\n    '.join(cells)}
+  </div>
+</section>'''
+        return html
 
     def split(
-        self, available_height: float, paper_size: str = "A4",
+        self, available_height: float, paper_size: str = "A4"
     ) -> Optional[Tuple["Component", "Component"]]:
-        return None  # 学号不可拆分
+        return None
+
+
+class ChoiceComponent(Component):
+    """选择题区域组件。"""
+
+    def __init__(self, config: SectionConfig) -> None:
+        super().__init__(config)
+        self.question_start = config.question_start
+        self.question_count = config.question_count
+        self.options = config.options or []
+        self.score = config.score
+        self.scores = config.scores
+
+    def estimate_height(self, paper_size: str = "A4") -> float:
+        cols = self._cols_for_paper(paper_size)
+        rows = math.ceil(self.question_count / cols)
+        return self._section_fixed_height() + self._bubble_grid_height(rows)
+
+    def render(self, page_num: int, y_offset_mm: float, paper_size: str = "A4") -> str:
+        cols = self._cols_for_paper(paper_size)
+        questions_html: list[str] = []
+        for i in range(self.question_count):
+            q_num = self.question_start + i
+            options_html = "".join(f'<span class="opt">{opt}</span>' for opt in self.options)
+            questions_html.append(
+                f'<div class="q-item">'
+                f'<span class="q-num">{q_num:02d}.</span>{options_html}'
+                f'</div>'
+            )
+
+        score_label = ""
+        if self.scores is not None:
+            if len(set(self.scores)) == 1:
+                score_label = f"，每题 {self.scores[0]} 分"
+            else:
+                score_label = "，逐题赋分"
+        elif self.score is not None:
+            score_label = f"，每题 {self.score} 分"
+        title = self.config.title or f"选择题（第 {self.question_start}~{self.question_start + self.question_count - 1} 题{score_label}）"
+
+        # 新增：instruction 渲染
+        from .html_renderer import resolve_instruction
+        instruction_html = ""
+        resolved = resolve_instruction("choice", self.config.instruction)
+        if resolved:
+            instruction_html = f'\n  <div class="sec-instruction">{resolved}</div>'
+
+        # 关键：去掉 absolute 定位，不再用 y_offset
+        html = f'''{self._before_gap_html()}<section class="choice-section">
+  <div class="sec-title">{title}</div>{instruction_html}
+  <div class="choice-grid" style="grid-template-columns: repeat({cols}, 1fr)">
+    {'\n    '.join(questions_html)}
+  </div>
+</section>
+'''
+        return html
+
+    def split(
+        self, available_height: float, paper_size: str = "A4"
+    ) -> Optional[Tuple["Component", "Component"]]:
+        needed = self.estimate_height(paper_size)
+        if needed <= available_height:
+            return None
+
+        cols = self._cols_for_paper(paper_size)
+        max_rows = self._max_bubble_rows_for_height(available_height)
+        max_questions = max_rows * cols
+
+        if max_questions < 1:
+            return None
+        if max_questions >= self.question_count:
+            return None
+
+        first_count = max_questions
+        second_count = self.question_count - first_count
+
+        first_scores = None
+        second_scores = None
+        if self.scores is not None:
+            first_scores = self.scores[:first_count]
+            second_scores = self.scores[first_count:]
+
+        first_cfg = SectionConfig(
+            type="choice",
+            question_start=self.question_start,
+            question_count=first_count,
+            title=self.config.title,
+            options=list(self.options),
+            score=self.score,
+            scores=first_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=0.0,
+        )
+        second_cfg = SectionConfig(
+            type="choice",
+            question_start=self.question_start + first_count,
+            question_count=second_count,
+            title=self.config.title,
+            options=list(self.options),
+            score=self.score,
+            scores=second_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=self.config.before_gap_mm,
+        )
+        return (ChoiceComponent(first_cfg), ChoiceComponent(second_cfg))
+
+
+class JudgeComponent(Component):
+    """判断题区域组件。"""
+
+    def __init__(self, config: SectionConfig) -> None:
+        super().__init__(config)
+        self.question_start = config.question_start
+        self.question_count = config.question_count
+        self.options = config.options or ["T", "F"]
+        self.score = config.score
+        self.scores = config.scores
+
+    def estimate_height(self, paper_size: str = "A4") -> float:
+        cols = self._cols_for_paper(paper_size)
+        rows = math.ceil(self.question_count / cols)
+        return self._section_fixed_height() + self._bubble_grid_height(rows)
+
+    def render(self, page_num: int, y_offset_mm: float, paper_size: str = "A4") -> str:
+        cols = self._cols_for_paper(paper_size)
+        questions_html: list[str] = []
+        for i in range(self.question_count):
+            q_num = self.question_start + i
+            options_html = "".join(f'<span class="opt">{opt}</span>' for opt in self.options)
+            questions_html.append(
+                f'<div class="q-item">'
+                f'<span class="q-num">{q_num:02d}.</span>{options_html}'
+                f'</div>'
+            )
+
+        score_label = ""
+        if self.scores is not None:
+            if len(set(self.scores)) == 1:
+                score_label = f"，每题 {self.scores[0]} 分"
+            else:
+                score_label = "，逐题赋分"
+        elif self.score is not None:
+            score_label = f"，每题 {self.score} 分"
+        title = self.config.title or f"判断题（第 {self.question_start}~{self.question_start + self.question_count - 1} 题{score_label}）"
+
+        # instruction 渲染
+        from .html_renderer import resolve_instruction
+        instruction_html = ""
+        resolved = resolve_instruction("judge", self.config.instruction)
+        if resolved:
+            instruction_html = f'\n  <div class="sec-instruction">{resolved}</div>'
+
+        # 去掉 absolute 定位
+        html = f'''{self._before_gap_html()}<section class="judge-section">
+  <div class="sec-title">{title}</div>{instruction_html}
+  <div class="judge-grid" style="grid-template-columns: repeat({cols}, 1fr)">
+    {'\n    '.join(questions_html)}
+  </div>
+</section>
+'''
+        return html
+
+    def split(
+        self, available_height: float, paper_size: str = "A4"
+    ) -> Optional[Tuple["Component", "Component"]]:
+        needed = self.estimate_height(paper_size)
+        if needed <= available_height:
+            return None
+
+        cols = self._cols_for_paper(paper_size)
+        max_rows = self._max_bubble_rows_for_height(available_height)
+        max_questions = max_rows * cols
+
+        if max_questions < 1:
+            return None
+        if max_questions >= self.question_count:
+            return None
+
+        first_count = max_questions
+        second_count = self.question_count - first_count
+
+        first_scores = None
+        second_scores = None
+        if self.scores is not None:
+            first_scores = self.scores[:first_count]
+            second_scores = self.scores[first_count:]
+
+        first_cfg = SectionConfig(
+            type="judge",
+            question_start=self.question_start,
+            question_count=first_count,
+            title=self.config.title,
+            options=list(self.options),
+            score=self.score,
+            scores=first_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=0.0,
+        )
+        second_cfg = SectionConfig(
+            type="judge",
+            question_start=self.question_start + first_count,
+            question_count=second_count,
+            title=self.config.title,
+            options=list(self.options),
+            score=self.score,
+            scores=second_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=self.config.before_gap_mm,
+        )
+        return (JudgeComponent(first_cfg), JudgeComponent(second_cfg))
+
+
+class EssayComponent(Component):
+    """简答题/填空题区域组件。"""
+
+    def __init__(self, config: SectionConfig) -> None:
+        super().__init__(config)
+        self.question_start = config.question_start
+        self.question_count = config.question_count
+        self.lines_per_question = config.lines_per_question or 1
+        self.score = config.score
+        self.scores = config.scores
+
+    def estimate_height(self, paper_size: str = "A4") -> float:
+        return self._section_fixed_height() + self._answer_list_height(
+            self.question_count, self.lines_per_question
+        )
+
+    def render(self, page_num: int, y_offset_mm: float, paper_size: str = "A4") -> str:
+        questions_html: list[str] = []
+        for i in range(self.question_count):
+            q_num = self.question_start + i
+            lines_html = "\n    ".join('<div class="essay-line"></div>' for _ in range(self.lines_per_question))
+            questions_html.append(
+                f'<div class="essay-item">\n'
+                f'  <div class="essay-label">{q_num:02d}.</div>\n'
+                f'  <div class="essay-lines">\n    {lines_html}\n  </div>\n'
+                f'</div>'
+            )
+
+        score_label = ""
+        if self.scores is not None:
+            if len(set(self.scores)) == 1:
+                score_label = f"，每题 {self.scores[0]} 分"
+            else:
+                score_label = "，逐题赋分"
+        elif self.score is not None:
+            score_label = f"，每题 {self.score} 分"
+        title = self.config.title or f"简答题（第 {self.question_start}~{self.question_start + self.question_count - 1} 题{score_label}）"
+
+        # instruction 渲染
+        from .html_renderer import resolve_instruction
+        instruction_html = ""
+        resolved = resolve_instruction("essay", self.config.instruction)
+        if resolved:
+            instruction_html = f'\n  <div class="sec-instruction">{resolved}</div>'
+
+        # 去掉 absolute 定位
+        html = f'''{self._before_gap_html()}<section class="essay-section">
+  <div class="sec-title">{title}</div>{instruction_html}
+  <div class="essay-list">
+    {'\n    '.join(questions_html)}
+  </div>
+</section>
+'''
+        return html
+
+    def split(
+        self, available_height: float, paper_size: str = "A4"
+    ) -> Optional[Tuple["Component", "Component"]]:
+        needed = self.estimate_height(paper_size)
+        if needed <= available_height:
+            return None
+
+        max_questions = self._max_answer_questions_for_height(
+            available_height, self.lines_per_question
+        )
+        if max_questions < 1:
+            return None
+        if max_questions >= self.question_count:
+            return None
+
+        first_count = max_questions
+        second_count = self.question_count - first_count
+
+        first_scores = None
+        second_scores = None
+        if self.scores is not None:
+            first_scores = self.scores[:first_count]
+            second_scores = self.scores[first_count:]
+
+        first_cfg = SectionConfig(
+            type="essay",
+            question_start=self.question_start,
+            question_count=first_count,
+            title=self.config.title,
+            lines_per_question=self.lines_per_question,
+            score=self.score,
+            scores=first_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=0.0,
+        )
+        second_cfg = SectionConfig(
+            type="essay",
+            question_start=self.question_start + first_count,
+            question_count=second_count,
+            title=self.config.title,
+            lines_per_question=self.lines_per_question,
+            score=self.score,
+            scores=second_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=self.config.before_gap_mm,
+        )
+        return (EssayComponent(first_cfg), EssayComponent(second_cfg))
+
+
+class SolutionComponent(Component):
+    """解答题区域组件：保留书写空间，但不绘制横线。"""
+
+    def __init__(self, config: SectionConfig) -> None:
+        super().__init__(config)
+        self.question_start = config.question_start
+        self.question_count = config.question_count
+        self.lines_per_question = config.lines_per_question or 1
+        self.score = config.score
+        self.scores = config.scores
+
+    def _blank_item_height(self) -> float:
+        if self.lines_per_question <= 0:
+            return 0.0
+        return self.lines_per_question * ANSWER_LINE_MM
+
+    def _blank_list_height(self) -> float:
+        if self.question_count <= 0:
+            return 0.0
+        return (
+            self.question_count * self._blank_item_height()
+            + max(0, self.question_count - 1) * ANSWER_ITEM_GAP_MM
+            + GRID_BOTTOM_MM
+        )
+
+    def _max_blank_questions_for_height(self, available_height: float) -> int:
+        item_height = self._blank_item_height()
+        usable = available_height - self._section_fixed_height() - GRID_BOTTOM_MM
+        if usable < item_height:
+            return 0
+        return int((usable + ANSWER_ITEM_GAP_MM) // (item_height + ANSWER_ITEM_GAP_MM))
+
+    def estimate_height(self, paper_size: str = "A4") -> float:
+        return self._section_fixed_height() + self._blank_list_height()
+
+    def render(self, page_num: int, y_offset_mm: float, paper_size: str = "A4") -> str:
+        questions_html: list[str] = []
+        for i in range(self.question_count):
+            q_num = self.question_start + i
+            height_mm = self._blank_item_height()
+            questions_html.append(
+                f'<div class="solution-item">\n'
+                f'  <div class="solution-label">{q_num:02d}.</div>\n'
+                f'  <div class="solution-box" style="min-height: {height_mm}mm"></div>\n'
+                f'</div>'
+            )
+
+        score_label = ""
+        if self.scores is not None:
+            if len(set(self.scores)) == 1:
+                score_label = f"，每题 {self.scores[0]} 分"
+            else:
+                score_label = "，逐题赋分"
+        elif self.score is not None:
+            score_label = f"，每题 {self.score} 分"
+        title = self.config.title or (
+            f"解答题（第 {self.question_start}~"
+            f"{self.question_start + self.question_count - 1} 题{score_label}）"
+        )
+
+        from .html_renderer import resolve_instruction
+        instruction_html = ""
+        resolved = resolve_instruction("solution", self.config.instruction)
+        if resolved:
+            instruction_html = f'\n  <div class="sec-instruction">{resolved}</div>'
+
+        html = f'''{self._before_gap_html()}<section class="solution-section">
+  <div class="sec-title">{title}</div>{instruction_html}
+  <div class="solution-list">
+    {'\n    '.join(questions_html)}
+  </div>
+</section>
+'''
+        return html
+
+    def split(
+        self, available_height: float, paper_size: str = "A4"
+    ) -> Optional[Tuple["Component", "Component"]]:
+        needed = self.estimate_height(paper_size)
+        if needed <= available_height:
+            return None
+
+        max_questions = self._max_blank_questions_for_height(available_height)
+        if max_questions < 1:
+            return None
+        if max_questions >= self.question_count:
+            return None
+
+        first_count = max_questions
+        second_count = self.question_count - first_count
+
+        first_scores = None
+        second_scores = None
+        if self.scores is not None:
+            first_scores = self.scores[:first_count]
+            second_scores = self.scores[first_count:]
+
+        first_cfg = SectionConfig(
+            type="solution",
+            question_start=self.question_start,
+            question_count=first_count,
+            title=self.config.title,
+            lines_per_question=self.lines_per_question,
+            score=self.score,
+            scores=first_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=0.0,
+        )
+        second_cfg = SectionConfig(
+            type="solution",
+            question_start=self.question_start + first_count,
+            question_count=second_count,
+            title=self.config.title,
+            lines_per_question=self.lines_per_question,
+            score=self.score,
+            scores=second_scores,
+            instruction=self.config.instruction,
+            before_gap_mm=self.config.before_gap_mm,
+        )
+        return (SolutionComponent(first_cfg), SolutionComponent(second_cfg))

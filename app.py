@@ -103,10 +103,13 @@ def _layout_ready(layout: dict[str, Any]) -> tuple[bool, str]:
 
 
 def render_designer_tab(session: ProjectSession) -> None:
+    from exam_project.gui.session import mark_dirty
     from exam_project.gui.views.designer import render_designer
     try:
         st.info("同步识别配置后，请点击左侧“保存”写回 .examproj 项目包。")
-        render_designer(session.project)
+        changed = render_designer(session.project)
+        if changed:
+            set_current_session(mark_dirty(session))
     except Exception as exc:
         st.error(f"答题卡设计器加载失败: {exc}")
 
