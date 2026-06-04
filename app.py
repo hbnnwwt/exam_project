@@ -536,10 +536,125 @@ def render_workspace(session: ProjectSession) -> None:
         render_assets_tab(session)
 
 
-st.set_page_config(page_title="Exam Project", layout="wide")
+def render_home(session: ProjectSession) -> None:
+    """首页 - 项目概览与工作流引导"""
+    st.title(session.manifest.name)
+    st.caption("基于 .examproj 单文件包的答题卡设计、识别、批改一体化工具")
 
-session = current_session()
-if session is None:
-    render_start_page()
-else:
-    render_workspace(session)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("项目名", session.manifest.name)
+    col2.metric("学号位数", session.manifest.exam.get("student_id_digits", "-"))
+    col3.metric("资产数", len(session.manifest.assets))
+
+    st.markdown("---")
+
+    st.subheader("🗺️ 工作流引导")
+    st.caption("按照以下步骤完成考试答题卡的全流程管理")
+
+    steps = [
+        ("1️⃣ 答题卡设计", "designer", "配置学号区、选择题区、判断题区、主观题区，保存后自动同步识别布局。"),
+        ("2️⃣ 空白校对", "calibration", "上传空白答题卡建立基准定位信息，提高识别准确率。"),
+        ("3️⃣ 阅卷调试", "grading", "在「阅卷」页面上传单张样张，验证识别与评分流程。"),
+        ("4️⃣ 批量处理", "grading", "确认调试无误后，在「阅卷」页面切换到「批量阅卷」进行正式批处理。"),
+        ("5️⃣ 项目资产", "assets", "查看项目 manifest、布局 JSON 等资产，保存到 .examproj。"),
+    ]
+
+    for i, (title, page_key, desc) in enumerate(steps):
+        cols = st.columns([4, 1])
+        with cols[0]:
+            st.markdown(f"**{title}**")
+            st.caption(desc)
+        with cols[1]:
+            if st.button("前往 →", key=f"wf_btn_{i}", use_container_width=True):
+                st.session_state.current_page = page_key
+                st.rerun()
+        if i < len(steps) - 1:
+            st.markdown("---")
+
+    st.markdown("---")
+    st.subheader("⚡ 快捷操作")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("💾 保存项目", use_container_width=True, type="primary"):
+            try:
+                new_session = save_project(session)
+                set_current_session(new_session)
+                st.session_state[FLASH_KEY] = "项目已保存"
+                st.rerun()
+            except Exception as exc:
+                show_project_error(exc)
+    with c2:
+        if st.button("📐 前往设计", use_container_width=True):
+            st.session_state.current_page = "designer"
+            st.rerun()
+    with c3:
+        if st.button("🔍 前往阅卷", use_container_width=True):
+            st.session_state.current_page = "grading"
+            st.rerun()
+
+
+def init_session_state() -> None:
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "home"
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="Exam Project",
+        page_icon="📝",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    init_session_state()
+
+    session = current_session()
+    current_page = st.session_state.current_page
+
+    # Sidebar navigation
+    with st.sidebar:
+        st.title("📝 Exam Project")
+        st.markdown("---")
+        st.markdown("**导航**")
+
+        pages = [
+            ("🏠 首页", "home"),
+            ("📐 答题卡设计", "designer"),
+            ("🎯 空白校对", "calibration"),
+            ("🔍 阅卷", "grading"),
+            ("📁 项目资产", "assets"),
+        ]
+
+        for label, page_key in pages:
+            disabled = session is None and page_key != "home"
+            btn_type = "primary" if current_page == page_key else "secondary"
+            if st.button(
+                label,
+                key=f"nav_{page_key}",
+                use_container_width=True,
+                disabled=disabled,
+                type=btn_type,
+            ):
+                st.session_state.current_page = page_key
+                st.rerun()
+
+    # Sidebar project operations (only when project is open)
+    if session is not None:
+        render_project_sidebar(session)
+
+    # Main content
+    if session is None:
+        render_start_page()
+    else:
+        page_renderers = {
+            "home": render_home,
+            "designer": render_designer_tab,
+            "calibration": render_calibration_tab,
+            "grading": render_single_and_batch,
+            "assets": render_assets_tab,
+        }
+        renderer = page_renderers.get(current_page, render_home)
+        renderer(session)
+
+
+if __name__ == "__main__":
+    main()
