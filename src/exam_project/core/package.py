@@ -181,6 +181,7 @@ class ExamProjectPackage:
 
     @staticmethod
     def open(package_path: Path, target_dir: Path) -> ExamProject:
+        """从 .examproj 文件打开（兼容旧版，解压到 target_dir）。"""
         _assert_safe_open_target(package_path, target_dir)
         target_dir.parent.mkdir(parents=True, exist_ok=True)
         staging_root = Path(
@@ -199,6 +200,30 @@ class ExamProjectPackage:
             return ExamProject(package_path=package_path, workdir=target_dir, manifest=manifest)
         finally:
             _cleanup_path(staging_root)
+
+    @staticmethod
+    def open_folder(folder_path: Path) -> ExamProject:
+        """从项目文件夹直接打开（新版文件夹模式）。"""
+        folder = folder_path.resolve()
+        if not folder.is_dir():
+            raise ProjectPackageError(f"项目文件夹不存在: {folder}")
+
+        manifest_path = folder / "project.json"
+        if not manifest_path.is_file():
+            raise ProjectPackageError("项目文件夹内缺少 project.json")
+
+        manifest = ProjectManifest.from_json(manifest_path.read_text(encoding="utf-8"))
+        validate_project(folder, manifest)
+
+        # 查找或自动创建 .examproj 归档包
+        package_files = list(folder.glob("*.examproj"))
+        if package_files:
+            package_path = package_files[0]
+        else:
+            package_path = folder / f"{folder.name}.examproj"
+            ExamProjectPackage.pack(folder, package_path)
+
+        return ExamProject(package_path=package_path, workdir=folder, manifest=manifest)
 
     @staticmethod
     def save(workdir: Path, package_path: Path) -> None:

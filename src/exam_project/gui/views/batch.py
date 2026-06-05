@@ -68,6 +68,20 @@ def _find_answer_sheets(answer_sheets_dir: Path) -> list[Path]:
     return sorted_image_paths([str(p) for p in paths])
 
 
+def _save_uploaded_sheets(
+    uploaded_files: list,
+    answer_sheets_dir: Path,
+) -> list[Path]:
+    """把用户上传的图片保存到项目 answer_sheets 目录，返回保存后的路径列表。"""
+    answer_sheets_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for uf in uploaded_files:
+        path = answer_sheets_dir / uf.name
+        path.write_bytes(uf.getbuffer())
+        saved.append(path)
+    return saved
+
+
 def _pair_pages(sheets: list[Path]) -> list[tuple[Optional[Path], Optional[Path]]]:
     """把单页/双页答题卡配对。
 

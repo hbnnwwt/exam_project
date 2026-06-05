@@ -202,6 +202,14 @@ def render_single(
         "系统将识别学号、选择题、判断题和简答题（如果有），并评分。"
     )
 
+    # 参考答案上传（独立于答题卡）
+    ak_file = st.file_uploader(
+        "📋 参考答案（.xlsx）",
+        type=["xlsx"],
+        key="single_answer_key",
+        help="第1行题号，第2行答案。未上传时将使用项目默认参考答案。",
+    )
+
     col1, col2 = st.columns(2)
     with col1:
         p1_file = st.file_uploader("第 1 页", type=["png", "jpg", "jpeg"], key="single_p1")
@@ -213,9 +221,9 @@ def render_single(
         return
 
     # 加载 GradingService
-    svc = _load_grading_service(p1_file, paths, project.workdir, controls)
+    svc = _load_grading_service(ak_file, paths, project.workdir, controls)
     if svc is None:
-        st.error("参考答案加载失败，无法评分。请上传有效的 xlsx 或检查项目配置。")
+        st.error("参考答案加载失败，无法评分。请先上传参考答案或检查项目配置。")
         return
     _maybe_attach_llm_grader(svc, **controls)
 

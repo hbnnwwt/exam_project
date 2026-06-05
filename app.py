@@ -25,10 +25,9 @@ FLASH_KEY = "exam_project_flash"
 DESIGNER_PROJECT_KEY = "exam_project_designer_project_id"
 
 
-def inspect_package(package_path: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="exam_project_gui_inspect_") as temp:
-        project = ExamProjectPackage.open(package_path, Path(temp) / "opened")
-        return project.manifest.to_dict()
+def inspect_package(folder_path: Path) -> dict[str, Any]:
+    project = ExamProjectPackage.open_folder(folder_path)
+    return project.manifest.to_dict()
 
 
 def show_project_error(error: Exception) -> None:
@@ -117,7 +116,7 @@ def render_designer_tab(session: ProjectSession) -> None:
     from exam_project.gui.session import mark_dirty
     from exam_project.gui.views.designer import render_designer
     try:
-        st.info("同步识别配置后，请点击左侧“保存”写回 .examproj 项目包。")
+        st.info("同步识别配置后，请点击左侧“保存”写回项目。")
         changed = render_designer(session.project)
         if changed:
             set_current_session(mark_dirty(session))
@@ -128,7 +127,7 @@ def render_designer_tab(session: ProjectSession) -> None:
 def render_calibration_tab(session: ProjectSession) -> None:
     from exam_project.gui.views.calibration import render_calibration_view
     try:
-        st.info("保存空白基准后，请点击左侧“保存”写回 .examproj 项目包。")
+        st.info("保存空白基准后，请点击左侧“保存”写回项目。")
         render_calibration_view(session.project)
     except Exception as exc:
         st.error(f"空白校对模块加载失败: {exc}")
@@ -136,15 +135,15 @@ def render_calibration_tab(session: ProjectSession) -> None:
 
 def render_start_page() -> None:
     st.title("Exam Project")
-    st.caption("新建或打开一个考试项目后进入工作区。")
+    st.caption("新建或打开一个考试项目文件夹后进入工作区。")
 
     new_tab, open_tab, import_tab, inspect_tab = st.tabs(
-        ["新建项目", "打开项目", "导入旧项目", "检查项目包"]
+        ["新建项目", "打开项目", "导入旧项目", "检查项目"]
     )
 
     with new_tab:
-        st.subheader("创建新的空白 .examproj")
-        new_package_output = st.text_input("输出项目包", value="demo.examproj", key="new_output")
+        st.subheader("创建新的项目文件夹")
+        new_folder = st.text_input("文件夹名", value="期末考试", key="new_folder")
         new_project_name = st.text_input("项目名称", value="期末考试", key="new_name")
         student_id_digits = st.number_input(
             "学号位数",
@@ -157,7 +156,7 @@ def render_start_page() -> None:
         if st.button("新建并打开", type="primary"):
             try:
                 session = create_and_open_project(
-                    Path(new_package_output),
+                    Path(new_folder),
                     name=new_project_name,
                     student_id_digits=int(student_id_digits),
                 )
@@ -168,11 +167,11 @@ def render_start_page() -> None:
                 st.rerun()
 
     with open_tab:
-        st.subheader("打开已有 .examproj")
-        package_path = st.text_input("项目包路径", value="", key="open_package")
+        st.subheader("打开已有项目文件夹")
+        folder_path = st.text_input("项目文件夹路径", value="", key="open_folder")
         if st.button("打开项目", type="primary"):
             try:
-                session = open_project(Path(package_path))
+                session = open_project(Path(folder_path))
             except Exception as exc:
                 show_project_error(exc)
             else:
@@ -180,16 +179,16 @@ def render_start_page() -> None:
                 st.rerun()
 
     with import_tab:
-        st.subheader("从旧系统资产创建 .examproj")
+        st.subheader("从旧系统资产导入到项目文件夹")
         legacy_root = st.text_input("旧项目目录", value="", key="legacy_root")
-        package_output = st.text_input("输出项目包", value="imported.examproj", key="legacy_output")
+        folder_output = st.text_input("目标文件夹", value="imported_project", key="legacy_folder")
         project_name = st.text_input("项目名称", value="期末考试", key="legacy_name")
 
         if st.button("导入并打开", type="primary"):
             try:
                 session = import_and_open_project(
                     Path(legacy_root),
-                    Path(package_output),
+                    Path(folder_output),
                     name=project_name,
                 )
             except Exception as exc:
@@ -199,9 +198,9 @@ def render_start_page() -> None:
                 st.rerun()
 
     with inspect_tab:
-        st.subheader("检查 .examproj manifest")
-        inspect_path = st.text_input("项目包路径", value="", key="inspect_package")
-        if st.button("检查项目包", type="primary"):
+        st.subheader("检查项目文件夹")
+        inspect_path = st.text_input("项目文件夹路径", value="", key="inspect_folder")
+        if st.button("检查项目", type="primary"):
             try:
                 manifest = inspect_package(Path(inspect_path))
             except Exception as exc:
@@ -214,7 +213,7 @@ def render_project_sidebar(session: ProjectSession) -> None:
     with st.sidebar:
         st.header("当前项目")
         st.write(session.manifest.name)
-        st.code(str(session.package_path), language=None)
+        st.code(str(session.workdir), language=None)
         show_flash_message()
 
         if st.button("保存", type="primary", use_container_width=True):
@@ -228,8 +227,8 @@ def render_project_sidebar(session: ProjectSession) -> None:
                 st.rerun()
 
         save_as_path = st.text_input(
-            "另存为",
-            value=str(session.package_path),
+            "另存为文件夹",
+            value=str(session.workdir) + "_copy",
             key="save_as_path",
         )
         if st.button("另存为", use_container_width=True):
@@ -539,7 +538,7 @@ def render_workspace(session: ProjectSession) -> None:
 def render_home(session: ProjectSession) -> None:
     """首页 - 项目概览与工作流引导"""
     st.title(session.manifest.name)
-    st.caption("基于 .examproj 单文件包的答题卡设计、识别、批改一体化工具")
+    st.caption("基于 .examproj 归档的答题卡设计、识别、批改一体化工具")
 
     col1, col2, col3 = st.columns(3)
     col1.metric("项目名", session.manifest.name)
@@ -556,7 +555,7 @@ def render_home(session: ProjectSession) -> None:
         ("2️⃣ 空白校对", "calibration", "上传空白答题卡建立基准定位信息，提高识别准确率。"),
         ("3️⃣ 阅卷调试", "grading", "在「阅卷」页面上传单张样张，验证识别与评分流程。"),
         ("4️⃣ 批量处理", "grading", "确认调试无误后，在「阅卷」页面切换到「批量阅卷」进行正式批处理。"),
-        ("5️⃣ 项目资产", "assets", "查看项目 manifest、布局 JSON 等资产，保存到 .examproj。"),
+        ("5️⃣ 项目资产", "assets", "查看项目 manifest、布局 JSON 等资产，保存到项目文件夹。"),
     ]
 
     for i, (title, page_key, desc) in enumerate(steps):
