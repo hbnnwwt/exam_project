@@ -213,7 +213,26 @@ class ExamProjectPackage:
             raise ProjectPackageError("项目文件夹内缺少 project.json")
 
         manifest = ProjectManifest.from_json(manifest_path.read_text(encoding="utf-8"))
-        validate_project(folder, manifest)
+
+        # 尝试验证；如果 checksum 不匹配则自动刷新（文件夹模式下允许直接编辑文件）
+        try:
+            validate_project(folder, manifest)
+        except ProjectValidationError as exc:
+            if exc.code == "checksum_mismatch":
+                from exam_project.core.checksum import build_checksums
+                from datetime import datetime, timezone
+
+                data = manifest.to_dict()
+                data["updated_at"] = (
+                    datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+                )
+                asset_paths = sorted(set(data["assets"].values()))
+                data["checksums"] = build_checksums(folder, asset_paths)
+                manifest = ProjectManifest.from_dict(data)
+                manifest_path.write_text(manifest.to_json(), encoding="utf-8")
+                validate_project(folder, manifest)
+            else:
+                raise
 
         # 加载已存在的 .examproj 归档包（不自动创建新的）
         expected_name = f"{folder.name}.examproj"
