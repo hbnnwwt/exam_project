@@ -1034,10 +1034,9 @@ def render_designer(project, legacy_root=None) -> None:
             except Exception as e:
                 st.error(f"HTML 生成失败: {e}")
 
-    # Persist back to session state + autosave
+    # Persist back to session state + autosave（仅在配置变化时写入）
     previous_cfg = st.session_state.get("designer_config")
     st.session_state.designer_config = cfg_dict
-    _autosave(cfg_dict, project)
 
     changed = False
     if previous_cfg is not None:
@@ -1045,6 +1044,7 @@ def render_designer(project, legacy_root=None) -> None:
             cfg_dict, sort_keys=True
         )
     if changed:
+        _autosave(cfg_dict, project)
         _persist_design_asset(cfg_dict, project)
         st.toast("配置已自动保存", icon="💾")
     return changed
