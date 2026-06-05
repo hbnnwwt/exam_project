@@ -215,13 +215,19 @@ class ExamProjectPackage:
         manifest = ProjectManifest.from_json(manifest_path.read_text(encoding="utf-8"))
         validate_project(folder, manifest)
 
-        # 查找或自动创建 .examproj 归档包
-        package_files = list(folder.glob("*.examproj"))
-        if package_files:
-            package_path = package_files[0]
+        # 加载已存在的 .examproj 归档包（不自动创建新的）
+        expected_name = f"{folder.name}.examproj"
+        expected_path = folder / expected_name
+        if expected_path.is_file():
+            package_path = expected_path
         else:
-            package_path = folder / f"{folder.name}.examproj"
-            ExamProjectPackage.pack(folder, package_path)
+            package_files = list(folder.glob("*.examproj"))
+            if package_files:
+                package_path = package_files[0]
+            else:
+                raise ProjectPackageError(
+                    f"项目文件夹内缺少 .examproj 归档包（期望: {expected_name}）"
+                )
 
         return ExamProject(package_path=package_path, workdir=folder, manifest=manifest)
 
