@@ -7,7 +7,7 @@ import zipfile
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
-from exam_project.core.errors import ProjectPackageError
+from exam_project.core.errors import ProjectPackageError, ProjectValidationError
 from exam_project.core.manifest import ProjectManifest
 from exam_project.core.project import ExamProject
 from exam_project.core.validation import validate_project
