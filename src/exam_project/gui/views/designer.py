@@ -691,15 +691,16 @@ def render_designer(project, legacy_root=None) -> None:
     st.subheader("答题卡设计器")
     st.caption("配置答题卡结构，实时预览并导出")
 
-    cfg_dict = st.session_state.get("designer_config")
-    if cfg_dict is None:
+    # 先记录上一次保存的配置（用于最后比较是否变化）
+    previous_cfg = st.session_state.get("designer_config")
+    if previous_cfg is None:
         # 优先从 autosave 恢复，否则用默认配置
         cfg_dict = _load_autosave(project) or _dict_from_config(_DEFAULT_CONFIG)
     else:
         # 深拷贝避免修改 session_state 中的原始对象
-        cfg_dict = copy.deepcopy(cfg_dict)
+        cfg_dict = copy.deepcopy(previous_cfg)
     cfg_dict = _normalize_designer_config(cfg_dict)
-    st.session_state.designer_config = cfg_dict
+    # 注意：不在这里写回 session_state，只在最后确认有变化时才写
     config_revision = int(st.session_state.get(_CONFIG_REVISION_KEY, 0))
 
     # 配置摘要
@@ -1038,14 +1039,11 @@ def render_designer(project, legacy_root=None) -> None:
                 st.error(f"HTML 生成失败: {e}")
 
     # Persist back to session state + autosave（仅在配置变化时写入）
-    previous_cfg = st.session_state.get("designer_config")
-    # 深拷贝一份用于比较（避免 cfg_dict 和 session_state 是同一引用）
-    previous_cfg_copy = copy.deepcopy(previous_cfg) if previous_cfg is not None else None
     st.session_state.designer_config = cfg_dict
 
     changed = False
-    if previous_cfg_copy is not None:
-        changed = json.dumps(previous_cfg_copy, sort_keys=True) != json.dumps(
+    if previous_cfg is not None:
+        changed = json.dumps(previous_cfg, sort_keys=True) != json.dumps(
             cfg_dict, sort_keys=True
         )
     if changed:
