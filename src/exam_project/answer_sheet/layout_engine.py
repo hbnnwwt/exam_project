@@ -103,17 +103,9 @@ def paginate(cfg: AnswerSheetConfig) -> list[Page]:
             split_result = comp.split(page_net_height - current_used, paper_size)
             if split_result is None:
                 if current_used > 0:
-                    remaining = page_net_height - current_used
                     pages.append(current_page)
                     current_page = Page(page_number=len(pages) + 1)
                     current_used = 0.0
-                    # 题前间距跨页连续计算：减去上一页已提供的空间
-                    gap = comp._before_gap_height()
-                    if gap > 0 and remaining > 0:
-                        new_gap = max(0.0, gap - remaining)
-                        section = replace(section, before_gap_mm=new_gap)
-                        comp = _create_component(section)
-                        comp_height = comp.estimate_height(paper_size)
                     continue
                 raise LayoutError(
                     f"Section {section.type} (题号 {section.question_start}~"

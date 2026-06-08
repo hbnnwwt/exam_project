@@ -1130,5 +1130,8 @@ def render_designer(project, legacy_root=None) -> None:
     if changed:
         _autosave(cfg_dict, project)
         _persist_design_asset(cfg_dict, project)
+        # 自动同步识别配置，避免用户忘记点击"同步到识别配置"
+        if cfg_obj and not error_msg:
+            _sync_layout_config(cfg_obj, project)
         st.toast("配置已自动保存", icon="💾")
     return changed
