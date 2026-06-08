@@ -490,15 +490,45 @@ def _render_step_3(layout: Optional[dict], page_count: int) -> None:
         try:
             if page_count == 1 and not (layout and layout.get("_pages")):
                 # 单页 + 旧布局：分别算 choice (page=1) 和 judge (page=2)
-                result_choice = compute_blank_baseline(temp_paths[0], layout, page=1)
-                result_judge = compute_blank_baseline(temp_paths[0], layout, page=2)
+                result_choice, viz_choice = compute_blank_baseline(temp_paths[0], layout, page=1, viz=True)
+                result_judge, viz_judge = compute_blank_baseline(temp_paths[0], layout, page=2, viz=True)
                 baseline = {**result_choice, **result_judge}
+                viz_pages = viz_choice + viz_judge
             else:
-                baseline = compute_blank_baseline_multipage(temp_paths, layout)
+                baseline, viz_pages = compute_blank_baseline_multipage(temp_paths, layout, viz=True)
             st.session_state["calib_baseline"] = baseline
+            st.session_state["calib_viz"] = viz_pages
             st.success(f"已计算 {len(baseline)} 个 section 的基准。")
         except Exception as exc:
             st.error(f"计算失败: {exc}")
+
+    # 展示可视化结果
+    viz_pages = st.session_state.get("calib_viz")
+    if viz_pages:
+        st.markdown("---")
+        st.markdown("**📊 计算过程可视化**")
+        for page_viz in viz_pages:
+            st.markdown(f"**第 {page_viz['page_idx'] + 1} 页**")
+            for sec_type, sec_viz in page_viz["sections"].items():
+                st.markdown(f"*{sec_type} 区域*")
+                cols = st.columns(3)
+                with cols[0]:
+                    st.image(sec_viz["roi_image"], caption="ROI + 填涂起始线（红）")
+                with cols[1]:
+                    st.image(sec_viz["grid_image"], caption="网格分割")
+                with cols[2]:
+                    if sec_viz["sample_cell_image"]:
+                        st.image(sec_viz["sample_cell_image"], caption="气泡位置检测")
+                    else:
+                        st.caption("无气泡位置数据")
+                # 统计摘要
+                stats = sec_viz["stats_summary"]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("题目数", stats["question_count"])
+                m2.metric("灰度均值", f"{stats['mean_avg']:.1f}")
+                m3.metric("灰度范围", f"{stats['mean_min']:.1f} ~ {stats['mean_max']:.1f}")
+                m4.metric("标准差均值", f"{stats['std_avg']:.1f}")
+                st.divider()
 
 
 def _render_step_4(project_workdir: Path) -> None:

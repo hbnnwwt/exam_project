@@ -7,7 +7,7 @@
   },
   "checksums": {
     "answers/reference_answers.xlsx": "sha256:1b53860b6a3352d838ca954eca496679810ee9122adc484c673d0c3e3dcdb07e",
-    "config/sheet_layout.json": "sha256:feae324d5111c69a048c3d3e67197ab2ccb493681f61c74e90196f8bd879acce",
+    "config/sheet_layout.json": "sha256:aff03fd9e6c5dce3c5a8110a749c6b78a03ef8cd1be522d0ede152633c71b6b9",
     "design/answer_sheet.json": "sha256:1e0c305c86784de0c196492fa07d85f12224aa2f5f48e1e7fa0bfea9002c3d90"
   },
   "created_at": "2026-06-05T15:12:25+08:00",
@@ -22,5 +22,5 @@
   "name": "期末考试",
   "project_id": "9427fd10-348b-41ca-9609-b03a373f6ed8",
   "schema_version": 1,
-  "updated_at": "2026-06-08T13:18:28+08:00"
+  "updated_at": "2026-06-08T18:57:00+08:00"
 }
