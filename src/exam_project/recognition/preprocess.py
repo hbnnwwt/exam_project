@@ -32,10 +32,6 @@ INVERT_DENSITY_RATIO = 1.2
 # 上下密度绝对下限：低于此值视为内容过少、不可靠
 INVERT_MIN_BOTTOM_DENSITY = 0.005
 
-# 角度矫正阈值：低于此值不旋转（避免亚像素抖动）
-MIN_CORRECTION_DEG = 0.5
-
-
 class PreprocessError(Exception):
     """图像加载或预处理失败。"""
 
@@ -49,7 +45,8 @@ class PreprocessResult:
         gray: 去噪后的灰度图
         enhanced: 对比度增强后的灰度图
         binary: 二值化后的图（黑底白内容/或反之，由方法决定）
-        correction_deg: 实际旋转角度（度，逆时针为正）。0 表示未旋转
+        correction_deg: 检测到的页面倾斜角（度，逆时针为正）
+        applied_rotation_deg: 实际应用到图像上的旋转角（派生属性）
         quality_warning: 扫描质量警告文本。无问题则为空串
     """
 
@@ -63,6 +60,12 @@ class PreprocessResult:
     @property
     def is_well_exposed(self) -> bool:
         return not self.quality_warning
+
+    @property
+    def applied_rotation_deg(self) -> float:
+        if abs(self.correction_deg) <= 1e-6:
+            return 0.0
+        return -self.correction_deg
 
 
 class ImagePreprocessor:
@@ -144,38 +147,35 @@ class ImagePreprocessor:
     # -------------------------------------------------------- orientation
 
     @staticmethod
-    def _detect_orientation(binary: np.ndarray) -> float:
-        """检测图像需要旋转的角度（度，逆时针为正）。
-
-        1. 找最大轮廓的 minAreaRect，判断竖向/横向
-        2. 由 angle 计算倾斜
-        3. 上下密度区分 0° 与 180° 翻转
-        """
+    def _detect_with_contour(
+        binary: np.ndarray,
+    ) -> tuple[float, Optional[np.ndarray], Optional[tuple]]:
+        """Return orientation angle together with the contour evidence."""
         inv = 255 - binary
         contours, _ = cv2.findContours(
             inv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         if not contours:
-            return 0.0
+            return 0.0, None, None
         largest = max(contours, key=cv2.contourArea)
         if cv2.contourArea(largest) < binary.size * MIN_CONTOUR_AREA_RATIO:
-            return 0.0
+            return 0.0, None, None
 
-        (_, (w, h), angle) = cv2.minAreaRect(largest)
-        tilt = angle + 90.0
+        rect = cv2.minAreaRect(largest)
+        (_, (w, h), angle) = rect
 
-        if w < h:
-            # 竖向：上下密度比较判定 0° vs 180°
+        if binary.shape[0] >= binary.shape[1]:
+            correction = ImagePreprocessor._small_skew_correction(angle)
             bh, bw = binary.shape
             top = np.sum(binary[: bh // 5, :] == 0) / max(bh // 5 * bw, 1)
             bot = np.sum(binary[4 * bh // 5 :, :] == 0) / max(
                 (bh - 4 * bh // 5) * bw, 1
             )
             if bot > top * INVERT_DENSITY_RATIO and bot > INVERT_MIN_BOTTOM_DENSITY:
-                return 180.0 - tilt
-            return -tilt
+                return ImagePreprocessor._normalize_correction(180.0 + correction), largest, rect
+            return correction, largest, rect
         else:
-            # 横向：先旋转 90° 再判断
+            tilt = angle + 90.0
             rotated = cv2.rotate(binary, cv2.ROTATE_90_CLOCKWISE)
             rh, rw = rotated.shape
             top = np.sum(rotated[: rh // 5, :] == 0) / max(rh // 5 * rw, 1)
@@ -183,8 +183,55 @@ class ImagePreprocessor:
                 (rh - 4 * rh // 5) * rw, 1
             )
             if bot > top * INVERT_DENSITY_RATIO and bot > INVERT_MIN_BOTTOM_DENSITY:
-                return -90.0 - tilt
-            return 90.0 - tilt
+                return -90.0 - tilt, largest, rect
+            return 90.0 - tilt, largest, rect
+
+    @staticmethod
+    def _small_skew_correction(angle: float) -> float:
+        skew = angle + 90.0 if angle < -45.0 else angle
+        return -skew
+
+    @staticmethod
+    def _normalize_correction(angle: float) -> float:
+        while angle > 180.0:
+            angle -= 360.0
+        while angle <= -180.0:
+            angle += 360.0
+        return angle
+
+    @staticmethod
+    def _detect_orientation(binary: np.ndarray) -> float:
+        """检测图像需要旋转的角度（度，逆时针为正）。"""
+        angle, _, _ = ImagePreprocessor._detect_with_contour(binary)
+        return angle
+
+    @staticmethod
+    def detect_orientation(binary: np.ndarray) -> float:
+        return ImagePreprocessor._detect_orientation(binary)
+
+    @staticmethod
+    def draw_orientation_detection(binary: np.ndarray) -> np.ndarray:
+        """Draw the contour/minAreaRect evidence used for orientation correction."""
+        angle, contour, rect = ImagePreprocessor._detect_with_contour(binary)
+        viz = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+
+        if contour is not None:
+            cv2.drawContours(viz, [contour], -1, (0, 200, 0), 2)
+        if rect is not None:
+            box = np.intp(cv2.boxPoints(rect))
+            cv2.drawContours(viz, [box], -1, (0, 100, 255), 2)
+            cx, cy = int(rect[0][0]), int(rect[0][1])
+            cv2.putText(
+                viz,
+                f"{angle:+.1f} deg",
+                (cx - 60, cy - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (0, 100, 255),
+                2,
+                cv2.LINE_AA,
+            )
+        return viz
 
     # -------------------------------------------------------------- denoise
 
@@ -264,7 +311,7 @@ class ImagePreprocessor:
 
         correction = self._detect_orientation(binary_raw)
 
-        if abs(correction) > MIN_CORRECTION_DEG:
+        if abs(correction) > 1e-6:
             h, w = image.shape[:2]
             center = (w // 2, h // 2)
             M = cv2.getRotationMatrix2D(center, -correction, 1.0)

@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 from .bubble_base import BubbleRecognizerBase
-from .layout import LayoutAnalyzer
+from .layout import LayoutAnalyzer, LayoutConfig
 from .preprocess import ImagePreprocessor
 
 
@@ -191,10 +191,9 @@ def compute_blank_baseline(
         layout = _default_layout()
 
     preprocessor = ImagePreprocessor()
-    analyzer = LayoutAnalyzer()
+    analyzer = LayoutAnalyzer(LayoutConfig.from_dict(layout))
 
     image = preprocessor.load(image_path)
-    preprocessor.process(image)  # 验证图像能处理；下面用 corrected
     corrected_result = preprocessor.process(image)
     corrected = corrected_result.corrected
     binary = corrected_result.binary
@@ -253,21 +252,19 @@ def compute_blank_baseline_multipage(
         layout = _default_layout()
 
     preprocessor = ImagePreprocessor()
-    analyzer = LayoutAnalyzer()
+    analyzer = LayoutAnalyzer(LayoutConfig.from_dict(layout))
 
-    images: list[np.ndarray] = []
     binaries: list[np.ndarray] = []
     corrected_images: list[np.ndarray] = []
     for path in image_paths:
         image = preprocessor.load(path)
         result = preprocessor.process(image)
-        images.append(image)
         binaries.append(result.binary)
         corrected_images.append(result.corrected)
 
     pages_config = layout.get("_pages") if isinstance(layout, dict) else None
     if pages_config:
-        regions_list = analyzer.analyze_multipage(images, binaries)
+        regions_list = analyzer.analyze_multipage(corrected_images, binaries)
     else:
         regions_list = [
             analyzer.analyze(c, b, page=idx + 1)

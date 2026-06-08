@@ -68,6 +68,10 @@ class Component(ABC):
     def _before_gap_height(self) -> float:
         return float(getattr(self.config, "before_gap_mm", 0.0) or 0.0)
 
+    def _bottom_gap_height(self) -> float:
+        """返回组件底部 margin（SECTION_GAP_MM），对应 CSS margin-bottom。"""
+        return SECTION_GAP_MM
+
     def _before_gap_html(self) -> str:
         gap = self._before_gap_height()
         if gap <= 0:

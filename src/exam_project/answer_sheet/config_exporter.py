@@ -90,8 +90,15 @@ def _build_fallback_layout(
             before_gap = (
                 comp._before_gap_height() if isinstance(comp, Component) else 0.0
             )
+            bottom_gap = (
+                comp._bottom_gap_height() if isinstance(comp, Component) else 0.0
+            )
             rel_start = round((cumulative_y + before_gap) / page_net_height, 4)
-            rel_end = round((cumulative_y + height) / page_net_height, 4)
+            # rel_end 不应包含底部 margin，因为检测器定位的是 section border-box，
+            # 而 CSS margin-bottom 不属于 border-box，也不会被轮廓检测合并。
+            rel_end = round(
+                (cumulative_y + max(height - bottom_gap, before_gap)) / page_net_height, 4
+            )
             cumulative_y += height
             rel_start = max(0.0, min(1.0, rel_start))
             rel_end = max(0.0, min(1.0, rel_end))

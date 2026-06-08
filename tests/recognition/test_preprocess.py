@@ -10,6 +10,7 @@ cv2 路径上的实际像素运算不在单测覆盖范围（那是集成测试�
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
 
@@ -174,6 +175,32 @@ def _make_synthetic_answer_sheet(size: int = 400) -> np.ndarray:
     return image
 
 
+def _make_portrait_answer_sheet(height: int = 600, width: int = 400) -> np.ndarray:
+    image = np.full((height, width, 3), 255, dtype=np.uint8)
+    cv2.rectangle(image, (40, 40), (width - 40, height - 40), (0, 0, 0), 4)
+    cv2.rectangle(image, (60, 120), (width - 60, 260), (0, 0, 0), 2)
+    cv2.rectangle(image, (60, 320), (width - 60, 480), (0, 0, 0), 2)
+    return image
+
+
+def _rotate_same_canvas(image: np.ndarray, angle: float) -> np.ndarray:
+    h, w = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+    return cv2.warpAffine(
+        image,
+        matrix,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+
+
+def _raw_otsu_binary(image: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
+
+
 def test_process_synthetic_image_returns_result() -> None:
     p = ImagePreprocessor()
     image = _make_synthetic_answer_sheet()
@@ -185,6 +212,41 @@ def test_process_synthetic_image_returns_result() -> None:
     assert result.binary.ndim == 2
     assert isinstance(result.correction_deg, float)
     assert isinstance(result.quality_warning, str)
+
+
+def test_process_corrects_small_portrait_skew() -> None:
+    p = ImagePreprocessor()
+    image = _rotate_same_canvas(_make_portrait_answer_sheet(), 3.0)
+
+    result = p.process(image)
+    residual = ImagePreprocessor.detect_orientation(_raw_otsu_binary(result.corrected))
+
+    assert result.correction_deg == pytest.approx(3.0, abs=0.2)
+    assert result.applied_rotation_deg == pytest.approx(-3.0, abs=0.2)
+    assert abs(residual) < 0.2
+
+
+def test_process_corrects_subthreshold_portrait_skew() -> None:
+    p = ImagePreprocessor()
+    image = _rotate_same_canvas(_make_portrait_answer_sheet(), 0.3)
+
+    result = p.process(image)
+    residual = ImagePreprocessor.detect_orientation(_raw_otsu_binary(result.corrected))
+
+    assert result.correction_deg == pytest.approx(0.3, abs=0.2)
+    assert result.applied_rotation_deg == pytest.approx(-result.correction_deg)
+    assert abs(residual) < 0.2
+
+
+def test_draw_orientation_detection_returns_bgr_visualization() -> None:
+    image = _make_synthetic_answer_sheet()
+    gray = np.mean(image, axis=2).astype(np.uint8)
+    binary = np.where(gray < 128, 0, 255).astype(np.uint8)
+
+    viz = ImagePreprocessor.draw_orientation_detection(binary)
+
+    assert viz.shape == image.shape
+    assert viz.dtype == np.uint8
 
 
 def test_process_with_resize_target() -> None:

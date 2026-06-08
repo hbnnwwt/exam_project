@@ -72,6 +72,20 @@ def test_from_dict_with_pages() -> None:
     assert len(config.pages) == 2
 
 
+def test_from_dict_preserves_page_specific_fallbacks_for_repeated_sections() -> None:
+    data = {
+        "layout": {
+            "page1_fallback": {"choice": [0.10, 0.20]},
+            "page2_fallback": {"choice": [0.70, 0.90]},
+        }
+    }
+
+    config = LayoutConfig.from_dict(data)
+
+    assert config.page_fallbacks[1]["choice"] == (0.10, 0.20)
+    assert config.page_fallbacks[2]["choice"] == (0.70, 0.90)
+
+
 def test_from_dict_with_empty_dict_uses_defaults() -> None:
     config = LayoutConfig.from_dict({})
     assert config.page1_fallback["student_id"] == (0.06, 0.26)
@@ -217,3 +231,73 @@ def test_analyze_multipage_mismatched_length_raises() -> None:
     bin_ = np.zeros((100, 100), dtype=np.uint8)
     with pytest.raises(ValueError, match="数量必须一致"):
         analyzer.analyze_multipage([img], [bin_, bin_])
+
+
+def test_filter_boxes_keeps_wide_judge_region() -> None:
+    import cv2
+    import numpy as np
+
+    analyzer = LayoutAnalyzer()
+    mask = np.zeros((2000, 5000), dtype=np.uint8)
+    cv2.rectangle(mask, (200, 900), (4490, 1635), 255, 2)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = analyzer._filter_boxes(contours, mask.size)
+
+    assert boxes == [(199, 899, 4293, 738)]
+
+
+def test_filter_boxes_rejects_overly_flat_header_line() -> None:
+    import cv2
+    import numpy as np
+
+    analyzer = LayoutAnalyzer()
+    mask = np.zeros((2000, 5000), dtype=np.uint8)
+    cv2.rectangle(mask, (200, 300), (4500, 600), 255, 2)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = analyzer._filter_boxes(contours, mask.size)
+
+    assert boxes == []
+
+
+def test_regions_from_spec_matches_boxes_by_fallback_overlap() -> None:
+    data = {
+        "layout": {
+            "page2_fallback": {
+                "judge": [0.0, 0.1613],
+                "essay": [0.183, 0.927],
+            }
+        }
+    }
+    analyzer = LayoutAnalyzer(LayoutConfig.from_dict(data))
+    essay_box = (171, 1869, 4319, 3829)
+    regions = analyzer._regions_from_spec(
+        [essay_box],
+        {"sections": [{"type": "judge"}, {"type": "essay"}]},
+        h=6736,
+        w=4764,
+    )
+
+    assert regions.judge == (0, 897, 4764, 875)
+    assert regions.essay == essay_box
+
+
+def test_fallback_regions_from_spec_uses_current_page_fallback_ratios() -> None:
+    data = {
+        "layout": {
+            "page1_fallback": {"choice": [0.10, 0.20]},
+            "page2_fallback": {"choice": [0.70, 0.90]},
+        },
+        "_pages": [
+            {"page_number": 1, "sections": [{"type": "choice"}]},
+            {"page_number": 2, "sections": [{"type": "choice"}]},
+        ],
+    }
+    analyzer = LayoutAnalyzer(LayoutConfig.from_dict(data))
+
+    page1 = analyzer.fallback_regions_from_spec(data["_pages"][0], h=1000, w=800)
+    page2 = analyzer.fallback_regions_from_spec(data["_pages"][1], h=1000, w=800)
+
+    assert page1["choice"][1] < 300
+    assert page2["choice"][1] > 600

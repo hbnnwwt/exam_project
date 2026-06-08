@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "title": "期末考试",
+    "paper_size": "A4",
+    "numbering_mode": "continuous"
+  },
+  "student_id": {
+    "digit_count": 10
+  },
+  "pages": [
+    {
+      "sections": [
+        {
+          "type": "student_id",
+          "question_start": 0,
+          "question_count": 0,
+          "digit_count": 10,
+          "before_gap_mm": 5.0
+        },
+        {
+          "type": "choice",
+          "question_start": 1,
+          "question_count": 20,
+          "options": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "score": 3.0,
+          "before_gap_mm": 5.0
+        },
+        {
+          "type": "judge",
+          "question_start": 21,
+          "question_count": 10,
+          "options": [
+            "T",
+            "F"
+          ],
+          "score": 2.0,
+          "before_gap_mm": 15.0
+        },
+        {
+          "type": "essay",
+          "question_start": 31,
+          "question_count": 1,
+          "lines_per_question": 15,
+          "score": 20.0,
+          "before_gap_mm": 5.0
+        }
+      ]
+    }
+  ]
+}

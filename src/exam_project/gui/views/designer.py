@@ -52,14 +52,35 @@ def _sync_layout_config(cfg: AnswerSheetConfig, project) -> bool:
 # ── Persistence helpers ────────────────────────────────────────────
 
 
+def _legacy_saved_designs_dir(project) -> Path:
+    return project.workdir / "saved_designs"
+
+
 def _saved_designs_dir(project) -> Path:
-    d = project.workdir / "saved_designs"
+    d = getattr(project, "saved_designs_dir", None) or (project.workdir / "saved_designs")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+def _saved_designs_dirs(project) -> List[Path]:
+    primary = _saved_designs_dir(project)
+    legacy = _legacy_saved_designs_dir(project)
+    dirs = [primary]
+    if legacy != primary and legacy.is_dir():
+        dirs.append(legacy)
+    return dirs
+
+
 def _autosave_path(project) -> Path:
     return _saved_designs_dir(project) / "_autosave.json"
+
+
+def _autosave_paths(project) -> List[Path]:
+    paths = [_autosave_path(project)]
+    legacy = _legacy_saved_designs_dir(project) / "_autosave.json"
+    if legacy != paths[0] and legacy.is_file():
+        paths.append(legacy)
+    return paths
 
 
 def _design_path(project, name: str) -> Path:
@@ -67,6 +88,15 @@ def _design_path(project, name: str) -> Path:
     if not safe:
         safe = "design"
     return _saved_designs_dir(project) / f"{safe}.json"
+
+
+def _design_paths(project, name: str) -> List[Path]:
+    primary = _design_path(project, name)
+    legacy = _legacy_saved_designs_dir(project) / primary.name
+    paths = [primary]
+    if legacy != primary and legacy.is_file():
+        paths.append(legacy)
+    return paths
 
 
 def save_design(name: str, cfg_dict: dict, project) -> None:
@@ -80,25 +110,35 @@ def save_design(name: str, cfg_dict: dict, project) -> None:
 
 def load_design(name: str, project) -> Optional[dict]:
     """从文件加载配置。"""
-    path = _design_path(project, name)
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    for path in _design_paths(project, name):
+        if not path.is_file():
+            continue
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return None
 
 
 def list_designs(project) -> List[tuple]:
     """返回所有已保存配置的名称和修改时间。"""
-    d = _saved_designs_dir(project)
-    designs = []
+    designs_by_name = {}
     autosave_name = _autosave_path(project).name
-    for p in d.iterdir():
-        if p.is_file() and p.suffix == ".json" and p.name != autosave_name and not p.name.startswith("_autosave."):
-            mtime = p.stat().st_mtime
-            dt = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-            designs.append((p.stem, dt))
+    for d in _saved_designs_dirs(project):
+        for p in d.iterdir():
+            if (
+                p.is_file()
+                and p.suffix == ".json"
+                and p.name != autosave_name
+                and not p.name.startswith("_autosave.")
+            ):
+                mtime = p.stat().st_mtime
+                if p.stem not in designs_by_name or mtime > designs_by_name[p.stem]:
+                    designs_by_name[p.stem] = mtime
+    designs = [
+        (name, datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"))
+        for name, mtime in designs_by_name.items()
+    ]
     # 按修改时间倒序
     designs.sort(key=lambda x: x[1], reverse=True)
     return designs
@@ -106,9 +146,9 @@ def list_designs(project) -> List[tuple]:
 
 def delete_design(name: str, project) -> None:
     """删除配置。"""
-    path = _design_path(project, name)
-    if path.is_file():
-        path.unlink()
+    for path in _design_paths(project, name):
+        if path.is_file():
+            path.unlink()
 
 
 def _autosave(cfg_dict: dict, project) -> None:
@@ -138,13 +178,48 @@ def _persist_design_asset(cfg_dict: dict, project) -> None:
 
 def _load_autosave(project) -> Optional[dict]:
     """尝试从 _autosave.json 恢复配置。"""
-    path = _autosave_path(project)
+    newest: tuple[float, dict] | None = None
+    for path in _autosave_paths(project):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        mtime = path.stat().st_mtime
+        if newest is None or mtime > newest[0]:
+            newest = (mtime, data)
+    return newest[1] if newest else None
+
+
+def _load_normalized_config_file(path: Path) -> Optional[dict]:
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        normalized = _normalize_designer_config(loaded)
+        AnswerSheetConfig.from_dict(normalized)
+        return normalized
     except Exception:
         return None
+
+
+def _load_initial_designer_config(project) -> dict:
+    """Load the durable project design, with newer valid autosave as draft recovery."""
+    candidates: List[tuple[float, dict]] = []
+    design_cfg = _load_normalized_config_file(project.design_path)
+    if design_cfg is not None:
+        candidates.append((project.design_path.stat().st_mtime, design_cfg))
+
+    for path in _autosave_paths(project):
+        autosave_cfg = _load_normalized_config_file(path)
+        if autosave_cfg is not None:
+            candidates.append((path.stat().st_mtime, autosave_cfg))
+
+    if candidates:
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+    return _dict_from_config(_DEFAULT_CONFIG)
 
 
 def _load_saved_design_config(name: str, project) -> dict:
@@ -695,7 +770,7 @@ def render_designer(project, legacy_root=None) -> None:
     previous_cfg = st.session_state.get("designer_config")
     if previous_cfg is None:
         # 优先从 autosave 恢复，否则用默认配置
-        cfg_dict = _load_autosave(project) or _dict_from_config(_DEFAULT_CONFIG)
+        cfg_dict = _load_initial_designer_config(project)
     else:
         # 深拷贝避免修改 session_state 中的原始对象
         cfg_dict = copy.deepcopy(previous_cfg)
@@ -1046,6 +1121,12 @@ def render_designer(project, legacy_root=None) -> None:
         changed = json.dumps(previous_cfg, sort_keys=True) != json.dumps(
             cfg_dict, sort_keys=True
         )
+    else:
+        design_cfg = _load_normalized_config_file(project.design_path)
+        if design_cfg is not None:
+            changed = json.dumps(design_cfg, sort_keys=True) != json.dumps(
+                cfg_dict, sort_keys=True
+            )
     if changed:
         _autosave(cfg_dict, project)
         _persist_design_asset(cfg_dict, project)

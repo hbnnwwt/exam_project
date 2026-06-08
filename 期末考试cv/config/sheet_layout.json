@@ -1,0 +1,98 @@
+{
+  "layout": {
+    "page1_fallback": {
+      "student_id": [
+        0.0233,
+        0.514
+      ],
+      "choice": [
+        0.5372,
+        0.8284
+      ]
+    },
+    "page2_fallback": {
+      "judge": [
+        0.0,
+        0.1613
+      ],
+      "essay": [
+        0.183,
+        0.927
+      ]
+    }
+  },
+  "scoring": {
+    "choice_score": 3.0,
+    "judge_score": 2.0,
+    "essay_max_score": 20.0
+  },
+  "_pages": [
+    {
+      "page_number": 1,
+      "sections": [
+        {
+          "type": "student_id",
+          "digit_count": 10
+        },
+        {
+          "type": "choice",
+          "question_start": 1,
+          "question_count": 20,
+          "options": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "before_gap_mm": 5.0
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "sections": [
+        {
+          "type": "judge",
+          "question_start": 21,
+          "question_count": 10,
+          "options": [
+            "T",
+            "F"
+          ]
+        },
+        {
+          "type": "essay",
+          "question_start": 31,
+          "question_count": 1,
+          "lines_per_question": 15,
+          "before_gap_mm": 5.0
+        }
+      ]
+    }
+  ],
+  "student_id": {
+    "digit_count": 10
+  },
+  "choice": {
+    "rows": 4,
+    "cols": 5,
+    "question_start": 1,
+    "question_count": 20,
+    "options": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ]
+  },
+  "judge": {
+    "rows": 2,
+    "cols": 5,
+    "question_start": 21,
+    "question_count": 10,
+    "options": [
+      "T",
+      "F"
+    ]
+  }
+}

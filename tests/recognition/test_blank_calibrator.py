@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+import exam_project.recognition.blank_calibrator as blank_calibrator_module
 from exam_project.recognition.blank_calibrator import (
     DEFAULT_CHOICE_GRID,
     DEFAULT_JUDGE_GRID,
@@ -21,6 +24,7 @@ from exam_project.recognition.blank_calibrator import (
     load_baseline,
     save_baseline,
 )
+from exam_project.recognition.layout import PageRegions
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +222,51 @@ def test_default_grids_have_required_keys() -> None:
 def test_zone_counts() -> None:
     assert ZONE_COUNT_CHOICE == 4
     assert ZONE_COUNT_JUDGE == 2
+
+
+def test_compute_blank_baseline_multipage_analyzes_corrected_images(monkeypatch) -> None:
+    raw = np.zeros((20, 20, 3), dtype=np.uint8)
+    corrected = np.full((20, 20, 3), 7, dtype=np.uint8)
+    binary = np.full((20, 20), 255, dtype=np.uint8)
+    captured: dict[str, object] = {}
+
+    class FakePreprocessor:
+        def load(self, path):
+            return raw
+
+        def process(self, image):
+            return SimpleNamespace(corrected=corrected, binary=binary)
+
+    class FakeAnalyzer:
+        def __init__(self, config):
+            pass
+
+        def analyze_multipage(self, images, binaries):
+            captured["images"] = images
+            captured["binaries"] = binaries
+            return [PageRegions(choice=(0, 0, 20, 20), image_size=(20, 20))]
+
+    def fake_compute_section_baseline(image, region_box, section_cfg, **kwargs):
+        captured["baseline_image"] = image
+        return {"questions": {"1": {"zones": []}}}
+
+    monkeypatch.setattr(blank_calibrator_module, "ImagePreprocessor", FakePreprocessor)
+    monkeypatch.setattr(blank_calibrator_module, "LayoutAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(
+        blank_calibrator_module,
+        "_compute_section_baseline",
+        fake_compute_section_baseline,
+    )
+
+    layout = {
+        "_pages": [{"sections": [{"type": "choice"}]}],
+        "choice": {"question_count": 1},
+    }
+    result = blank_calibrator_module.compute_blank_baseline_multipage(
+        ["blank.png"], layout
+    )
+
+    assert captured["images"][0] is corrected
+    assert captured["binaries"][0] is binary
+    assert captured["baseline_image"] is corrected
+    assert result == {"choice": {"questions": {"1": {"zones": []}}}}

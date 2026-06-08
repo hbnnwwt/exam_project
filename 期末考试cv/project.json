@@ -1,0 +1,26 @@
+{
+  "assets": {
+    "answers": "answers/reference_answers.xlsx",
+    "baseline": "config/blank_baseline.json",
+    "design": "design/answer_sheet.json",
+    "layout": "config/sheet_layout.json"
+  },
+  "checksums": {
+    "answers/reference_answers.xlsx": "sha256:1b53860b6a3352d838ca954eca496679810ee9122adc484c673d0c3e3dcdb07e",
+    "config/sheet_layout.json": "sha256:feae324d5111c69a048c3d3e67197ab2ccb493681f61c74e90196f8bd879acce",
+    "design/answer_sheet.json": "sha256:1e0c305c86784de0c196492fa07d85f12224aa2f5f48e1e7fa0bfea9002c3d90"
+  },
+  "created_at": "2026-06-05T15:12:25+08:00",
+  "exam": {
+    "question_types": [
+      "choice",
+      "judge",
+      "essay"
+    ],
+    "student_id_digits": 10
+  },
+  "name": "期末考试",
+  "project_id": "9427fd10-348b-41ca-9609-b03a373f6ed8",
+  "schema_version": 1,
+  "updated_at": "2026-06-08T13:18:28+08:00"
+}
